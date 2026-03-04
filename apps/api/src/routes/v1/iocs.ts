@@ -158,6 +158,106 @@ router.get('/iocs/:idOrValue', async (c) => {
     return c.json({ success: true, data: mappedData, source: 'database' });
 });
 
+// ============================================================================
+// IOC Lifecycle Management (MISP / STIX 2.1 inspired)
+// ============================================================================
+
+import { requireAuth, requireRole } from '../../middleware/auth';
+import {
+    IOCUpdateSchema, IOCRevokeSchema, IOCExpireSchema, IOCVerdictSchema,
+} from '../../lib/schemas';
+
+/** PUT /v1/iocs/:id — Partial update of IOC fields */
+router.put('/iocs/:id', requireAuth, requireRole('admin', 'analyst'), async (c) => {
+    const { id } = c.req.param();
+    const body = IOCUpdateSchema.parse(await c.req.json().catch(() => ({})));
+
+    const setClauses: string[] = ['updated_at = NOW()'];
+    const esc = (s: string) => s.replace(/'/g, "''");
+
+    if (body.severity) setClauses.push(`severity = '${esc(body.severity)}'`);
+    if (body.confidence !== undefined) setClauses.push(`confidence = ${body.confidence}`);
+    if (body.tags) setClauses.push(`tags = ARRAY[${body.tags.map(t => `'${esc(t)}'`).join(',')}]`);
+    if (body.threatType) setClauses.push(`threat_type = '${esc(body.threatType)}'`);
+    if (body.notes) setClauses.push(`raw_data = COALESCE(raw_data, '{}'::jsonb) || '${JSON.stringify({ notes: body.notes }).replace(/'/g, "''")}'::jsonb`);
+
+    const result = await rawQuery(sql.raw(`
+        UPDATE iocs SET ${setClauses.join(', ')} WHERE id = '${esc(id)}'
+        RETURNING id, type, value, severity, confidence, tags, threat_type, updated_at
+    `));
+
+    const row = result.rows?.[0];
+    if (!row) throw new NotFoundError('IOC', id);
+    return c.json({ success: true, data: row });
+});
+
+/** POST /v1/iocs/:id/revoke — Mark IOC as revoked (soft-delete with reason) */
+router.post('/iocs/:id/revoke', requireAuth, requireRole('admin', 'analyst'), async (c) => {
+    const { id } = c.req.param();
+    const body = IOCRevokeSchema.parse(await c.req.json().catch(() => ({})));
+    const esc = (s: string) => s.replace(/'/g, "''");
+
+    const revokeData = JSON.stringify({ revoked: true, revokeReason: body.reason, revokedAt: new Date().toISOString() }).replace(/'/g, "''");
+    const result = await rawQuery(sql.raw(`
+        UPDATE iocs SET
+            raw_data = COALESCE(raw_data, '{}'::jsonb) || '${revokeData}'::jsonb,
+            updated_at = NOW()
+        WHERE id = '${esc(id)}'
+        RETURNING id, type, value
+    `));
+
+    const row = result.rows?.[0];
+    if (!row) throw new NotFoundError('IOC', id);
+    return c.json({ success: true, data: { ...row, revoked: true, reason: body.reason } });
+});
+
+/** POST /v1/iocs/:id/expire — Set valid_until date for automatic expiry */
+router.post('/iocs/:id/expire', requireAuth, requireRole('admin', 'analyst'), async (c) => {
+    const { id } = c.req.param();
+    const body = IOCExpireSchema.parse(await c.req.json().catch(() => ({})));
+    const esc = (s: string) => s.replace(/'/g, "''");
+
+    const expireData = JSON.stringify({ validUntil: body.validUntil }).replace(/'/g, "''");
+    const result = await rawQuery(sql.raw(`
+        UPDATE iocs SET
+            raw_data = COALESCE(raw_data, '{}'::jsonb) || '${expireData}'::jsonb,
+            updated_at = NOW()
+        WHERE id = '${esc(id)}'
+        RETURNING id, type, value
+    `));
+
+    const row = result.rows?.[0];
+    if (!row) throw new NotFoundError('IOC', id);
+    return c.json({ success: true, data: { ...row, validUntil: body.validUntil } });
+});
+
+/** POST /v1/iocs/:id/verdict — Assign analyst verdict */
+router.post('/iocs/:id/verdict', requireAuth, requireRole('admin', 'analyst'), async (c) => {
+    const { id } = c.req.param();
+    const body = IOCVerdictSchema.parse(await c.req.json().catch(() => ({})));
+    const esc = (s: string) => s.replace(/'/g, "''");
+    const userId = c.get('user')?.id || 'unknown';
+
+    const verdictData = JSON.stringify({
+        verdict: body.verdict,
+        verdictNotes: body.notes,
+        verdictBy: userId,
+        verdictAt: new Date().toISOString(),
+    }).replace(/'/g, "''");
+
+    const result = await rawQuery(sql.raw(`
+        UPDATE iocs SET
+            raw_data = COALESCE(raw_data, '{}'::jsonb) || '${verdictData}'::jsonb,
+            updated_at = NOW()
+        WHERE id = '${esc(id)}'
+        RETURNING id, type, value
+    `));
+
+    const row = result.rows?.[0];
+    if (!row) throw new NotFoundError('IOC', id);
+    return c.json({ success: true, data: { ...row, verdict: body.verdict } });
+});
+
 export default router;
 
 

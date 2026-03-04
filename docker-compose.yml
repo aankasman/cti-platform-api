@@ -541,6 +541,14 @@ services:
       - SHODAN_API_KEY=${SHODAN_API_KEY:-}
       - IPINFO_API_KEY=${IPINFO_API_KEY:-}
       - ZOOMEYE_API_KEY=${ZOOMEYE_API_KEY:-}
+      # ── Keycloak SSO (Docker-internal URL) ──
+      - KEYCLOAK_URL=http://v3-keycloak:8080
+      - KEYCLOAK_REALM=${KEYCLOAK_REALM:-rinjani}
+      - KEYCLOAK_CLIENT_ID=${KEYCLOAK_CLIENT_ID:-rinjani-api}
+      - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET:-rinjani-api-secret}
+      # ── Vault (Docker-internal URL) ──
+      - VAULT_ADDR=http://v3-vault:8200
+      - VAULT_ROOT_TOKEN=${VAULT_ROOT_TOKEN:-rinjani-dev-token}
     depends_on:
       v3-pgbouncer:
         condition: service_healthy

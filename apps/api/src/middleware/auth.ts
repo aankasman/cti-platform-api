@@ -155,7 +155,8 @@ export async function optionalAuth(c: Context, next: Next) {
             method: 'api_key',
         });
     } else if (authHeader?.startsWith('Bearer ')) {
-        const payload = verifyJWT(authHeader.slice(7));
+        const token = authHeader.slice(7);
+        const payload = verifyJWT(token);
         if (payload) {
             c.set('user', {
                 id: payload.sub,
@@ -166,6 +167,28 @@ export async function optionalAuth(c: Context, next: Next) {
                 tenantId: payload.tenantId,
                 tenantRole: payload.tenantRole,
             });
+        } else {
+            // Fallback: try Keycloak-issued JWT
+            try {
+                const { keycloak } = await import('../services/keycloak');
+                const { mapKeycloakRolesToPlatformRole } = await import('../services/rbacService');
+                if (await keycloak.isAvailable()) {
+                    const kcPayload = keycloak.decodeToken(token);
+                    if (kcPayload && kcPayload.exp > Math.floor(Date.now() / 1000)) {
+                        const kcRoles = keycloak.extractRoles(kcPayload);
+                        const platformRole = mapKeycloakRolesToPlatformRole(kcRoles) as 'admin' | 'analyst' | 'developer' | 'auditor' | 'viewer';
+                        c.set('user', {
+                            id: kcPayload.sub,
+                            name: kcPayload.preferred_username || kcPayload.email || 'SSO User',
+                            role: platformRole,
+                            permissions: [],
+                            method: 'keycloak' as const,
+                        });
+                    }
+                }
+            } catch {
+                // Keycloak unavailable — token stays unverified
+            }
         }
     }
 
@@ -264,6 +287,7 @@ export const authRouter = new Hono();
 authRouter.post('/login', async (c) => {
     const body = await c.req.json<{ username?: string; password?: string; api_key?: string }>();
 
+    // ── 1. API Key login ──────────────────────────────────────────────────
     if (body.api_key && API_KEYS.has(body.api_key)) {
         const keyInfo = API_KEYS.get(body.api_key)!;
         const token = createJWT({
@@ -275,17 +299,151 @@ authRouter.post('/login', async (c) => {
         return c.json({ success: true, token, user: { name: keyInfo.name, role: keyInfo.role }, expiresIn: '24h' });
     }
 
-    if (body.username === 'admin' && body.password === 'admin') {
-        const token = createJWT({
-            sub: 'user:admin',
-            name: 'Administrator',
-            role: 'admin',
-            exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60),
-        });
-        return c.json({ success: true, token, user: { name: 'Administrator', role: 'admin' }, expiresIn: '24h' });
+    // ── 2. Credential login (DB user lookup) ──────────────────────────────
+    if (body.username && body.password) {
+        try {
+            const { eq } = await import('@rinjani/db');
+            const { db } = await import('@rinjani/db');
+            const { users } = await import('@rinjani/db/schema');
+            const { verifyPassword } = await import('../services/userService');
+
+            // Look up user by email (username field is email on the login form)
+            const [row] = await db.select().from(users).where(eq(users.email, body.username)).limit(1);
+
+            if (row && row.passwordHash) {
+                if (verifyPassword(body.password, row.passwordHash)) {
+                    if (!row.isActive) {
+                        return c.json({ success: false, error: 'Account is deactivated. Contact administrator.' }, 403);
+                    }
+
+                    const role = ((row.roles as string[]) || ['viewer'])[0] as 'admin' | 'analyst' | 'developer' | 'auditor' | 'viewer';
+                    const token = createJWT({
+                        sub: row.id,
+                        name: row.name,
+                        role,
+                        exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60),
+                    });
+
+                    // Update lastLogin timestamp
+                    await db.update(users).set({ lastLogin: new Date() }).where(eq(users.id, row.id));
+
+                    return c.json({
+                        success: true,
+                        token,
+                        user: { id: row.id, name: row.name, role, email: row.email },
+                        expiresIn: '24h',
+                    });
+                }
+                // Password wrong — fall through to 401
+            }
+        } catch (err) {
+            // DB unavailable — fall through to legacy check
+            console.error('[Auth] DB login lookup failed:', (err as Error).message);
+        }
+
+        // ── 3. Legacy hardcoded admin (bootstrap fallback) ────────────────
+        if (body.username === 'admin' && body.password === 'admin') {
+            const token = createJWT({
+                sub: 'user:admin',
+                name: 'Administrator',
+                role: 'admin',
+                exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60),
+            });
+            return c.json({ success: true, token, user: { name: 'Administrator', role: 'admin' }, expiresIn: '24h' });
+        }
     }
 
     return c.json({ success: false, error: 'Invalid credentials' }, 401);
+});
+
+// ── Register endpoint ─────────────────────────────────────────────────────
+authRouter.post('/register', async (c) => {
+    const body = await c.req.json<{
+        email: string;
+        password: string;
+        name: string;
+        role?: string;
+    }>();
+
+    if (!body.email || !body.password || !body.name) {
+        return c.json({ success: false, error: 'Email, password, and name are required' }, 400);
+    }
+
+    if (body.password.length < 8) {
+        return c.json({ success: false, error: 'Password must be at least 8 characters' }, 400);
+    }
+
+    try {
+        const { db, eq } = await import('@rinjani/db');
+        const { users } = await import('@rinjani/db/schema');
+        const { hashPassword, generateApiToken } = await import('../services/userService');
+        const { randomUUID } = await import('crypto');
+
+        // Check duplicate email
+        const [existing] = await db.select().from(users).where(eq(users.email, body.email)).limit(1);
+        if (existing) {
+            // If user exists but has no password, set it (first-time password setup)
+            if (!existing.passwordHash) {
+                const passwordHash = hashPassword(body.password);
+                await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, existing.id));
+
+                const role = ((existing.roles as string[]) || ['viewer'])[0] as 'admin' | 'analyst' | 'developer' | 'auditor' | 'viewer';
+                const token = createJWT({
+                    sub: existing.id,
+                    name: existing.name,
+                    role,
+                    exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60),
+                });
+
+                return c.json({
+                    success: true,
+                    token,
+                    user: { id: existing.id, name: existing.name, role, email: existing.email },
+                    credentials: { apiToken: existing.apiToken || '', keycloakSynced: false },
+                    expiresIn: '24h',
+                });
+            }
+            return c.json({ success: false, error: 'Email already registered. Use login instead.' }, 409);
+        }
+
+        const id = randomUUID();
+        const now = new Date();
+        const passwordHash = hashPassword(body.password);
+        const apiToken = generateApiToken();
+        const role = body.role || 'analyst';
+
+        const [row] = await db.insert(users).values({
+            id,
+            email: body.email,
+            name: body.name,
+            roles: [role],
+            permissions: [],
+            isActive: true,
+            passwordHash,
+            apiToken,
+            createdAt: now,
+            updatedAt: now,
+        }).returning();
+
+        // Auto-login: issue a JWT
+        const token = createJWT({
+            sub: row.id,
+            name: row.name,
+            role: role as 'admin' | 'analyst' | 'developer' | 'auditor' | 'viewer',
+            exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60),
+        });
+
+        return c.json({
+            success: true,
+            token,
+            user: { id: row.id, name: row.name, role, email: row.email },
+            credentials: { apiToken, temporaryPassword: undefined, keycloakSynced: false },
+            expiresIn: '24h',
+        });
+    } catch (err) {
+        console.error('[Auth] Registration failed:', (err as Error).message);
+        return c.json({ success: false, error: (err as Error).message }, 500);
+    }
 });
 
 authRouter.get('/verify', requireAuth, async (c) => {

@@ -10,12 +10,15 @@ import {
     listFeeds, updateFeed, addCustomFeed, deleteCustomFeed,
     listApiKeys, updateApiKey, addCustomApiKey, deleteCustomApiKey, testApiKey,
     listServices, updateService, addCustomService, deleteCustomService,
+    getFeedById, getFeedSyncHistory, testFeedConnectivity,
 } from '../../services/configStore';
 import { ValidationError, NotFoundError } from '../../lib/errors';
+import { feedSyncQueue } from '../../queues/definitions';
 import {
     AddFeedSchema, UpdateFeedSchema,
     AddApiKeySchema, UpdateApiKeyValueSchema,
     AddServiceSchema, UpdateServiceSchema,
+    FeedSyncTriggerSchema, FeedSyncHistoryQuerySchema,
 } from '../../lib/schemas';
 
 const config = new Hono();
@@ -50,9 +53,46 @@ config.delete('/config/feeds/:id', async (c) => {
     return c.json({ data: { id, deleted: true } });
 });
 
-// ============================================================================
-// API KEYS
-// ============================================================================
+/** POST /config/feeds/:id/sync — Trigger manual feed sync (MISP/IntelOwl inspired) */
+config.post('/config/feeds/:id/sync', async (c) => {
+    const { id } = c.req.param();
+    const body = FeedSyncTriggerSchema.parse(await c.req.json().catch(() => ({})));
+    const feed = await getFeedById(id);
+    if (!feed) throw new NotFoundError('Feed', id);
+
+    const job = await feedSyncQueue.add(`manual-sync-${feed.source}`, {
+        source: feed.source,
+        options: { ...(body.force ? { force: true } : {}) },
+    });
+
+    return c.json({
+        data: {
+            jobId: job.id,
+            feedId: id,
+            feedName: feed.name,
+            message: `Sync job queued for ${feed.name}`,
+        },
+    }, 202);
+});
+
+/** GET /config/feeds/:id/history — Feed sync run history */
+config.get('/config/feeds/:id/history', async (c) => {
+    const { id } = c.req.param();
+    const { limit } = FeedSyncHistoryQuerySchema.parse(c.req.query());
+    const feed = await getFeedById(id);
+    if (!feed) throw new NotFoundError('Feed', id);
+
+    const history = await getFeedSyncHistory(id, limit);
+    return c.json({ data: { feedId: id, feedName: feed.name, runs: history } });
+});
+
+/** POST /config/feeds/:id/test — Test feed connectivity */
+config.post('/config/feeds/:id/test', async (c) => {
+    const { id } = c.req.param();
+    const result = await testFeedConnectivity(id);
+    return c.json({ data: result });
+});
+
 
 config.get('/config/api-keys', async (c) => {
     const keys = await listApiKeys();

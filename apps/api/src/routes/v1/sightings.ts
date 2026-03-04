@@ -106,4 +106,48 @@ sightingRoutes.get('/sightings/stats', async (c) => {
     });
 });
 
+// ============================================================================
+// Sighting Mutations (MISP-style lifecycle)
+// ============================================================================
+
+import { rawQuery, sql } from '@rinjani/db';
+import { SightingUpdateSchema } from '../../lib/schemas';
+
+/** PUT /v1/sightings/:id — Update sighting attributes */
+sightingRoutes.put('/sightings/:id', requireRole('admin', 'analyst'), async (c) => {
+    const { id } = c.req.param();
+    const body = SightingUpdateSchema.parse(await c.req.json().catch(() => ({})));
+
+    const setClauses: string[] = ['updated_at = NOW()'];
+    const esc = (s: string) => s.replace(/'/g, "''");
+
+    if (body.source) setClauses.push(`source = '${esc(body.source)}'`);
+    if (body.type) setClauses.push(`sighting_type = '${esc(body.type)}'`);
+    if (body.description) setClauses.push(`description = '${esc(body.description)}'`);
+    if (body.confidence !== undefined) setClauses.push(`confidence = ${body.confidence}`);
+
+    const result = await rawQuery(sql.raw(`
+        UPDATE sightings SET ${setClauses.join(', ')} WHERE id = '${esc(id)}'
+        RETURNING id, ioc_id, source, sighting_type, description, confidence, updated_at
+    `));
+
+    const row = result.rows?.[0];
+    if (!row) throw new NotFoundError('Sighting', id);
+    return c.json({ success: true, data: row });
+});
+
+/** DELETE /v1/sightings/:id — Remove false sighting */
+sightingRoutes.delete('/sightings/:id', requireRole('admin', 'analyst'), async (c) => {
+    const { id } = c.req.param();
+    const esc = (s: string) => s.replace(/'/g, "''");
+
+    const result = await rawQuery(sql.raw(`
+        DELETE FROM sightings WHERE id = '${esc(id)}'
+        RETURNING id
+    `));
+
+    if (!result.rows?.[0]) throw new NotFoundError('Sighting', id);
+    return c.json({ success: true, data: { id, deleted: true } });
+});
+
 export default sightingRoutes;

@@ -343,4 +343,64 @@ router.get('/indicators/cursor', async (c) => {
     return c.json({ success: true, ...response });
 });
 
+// ============================================================================
+// Threat Actor CRUD (Phase AG — TheHive inspired)
+// ============================================================================
+
+import { requireAuth, requireRole } from '../../middleware/auth';
+import { CreateThreatActorSchema, UpdateThreatActorSchema } from '../../lib/schemas';
+
+/** POST /v1/threats/actors — Create a new threat actor */
+router.post('/threats/actors', requireAuth, requireRole('admin', 'analyst'), async (c) => {
+    const body = CreateThreatActorSchema.parse(await c.req.json().catch(() => ({})));
+
+    const [created] = await db.insert(threatActors).values({
+        name: body.name,
+        stixId: `threat-actor--${crypto.randomUUID()}`,
+        description: body.description,
+        aliases: body.aliases,
+        sophistication: body.sophistication || null,
+        resourceLevel: body.resourceLevel || null,
+        primaryMotivation: body.primaryMotivation || null,
+        labels: body.tags,
+    }).returning();
+
+    return c.json({ success: true, data: created }, 201);
+});
+
+/** PUT /v1/threats/actors/:id — Update threat actor */
+router.put('/threats/actors/:id', requireAuth, requireRole('admin', 'analyst'), async (c) => {
+    const { id } = c.req.param();
+    const body = UpdateThreatActorSchema.parse(await c.req.json().catch(() => ({})));
+
+    const set: Record<string, unknown> = { updatedAt: new Date() };
+    if (body.name) set.name = body.name;
+    if (body.description) set.description = body.description;
+    if (body.aliases) set.aliases = body.aliases;
+    if (body.sophistication) set.sophistication = body.sophistication;
+    if (body.resourceLevel) set.resourceLevel = body.resourceLevel;
+    if (body.primaryMotivation) set.primaryMotivation = body.primaryMotivation;
+    if (body.tags) set.labels = body.tags;
+
+    const [updated] = await db.update(threatActors)
+        .set(set)
+        .where(eq(threatActors.id, id))
+        .returning();
+
+    if (!updated) throw new NotFoundError('Threat actor', id);
+    return c.json({ success: true, data: updated });
+});
+
+/** DELETE /v1/threats/actors/:id — Delete threat actor */
+router.delete('/threats/actors/:id', requireAuth, requireRole('admin'), async (c) => {
+    const { id } = c.req.param();
+
+    const [deleted] = await db.delete(threatActors)
+        .where(eq(threatActors.id, id))
+        .returning({ id: threatActors.id });
+
+    if (!deleted) throw new NotFoundError('Threat actor', id);
+    return c.json({ success: true, data: { id, deleted: true } });
+});
+
 export default router;

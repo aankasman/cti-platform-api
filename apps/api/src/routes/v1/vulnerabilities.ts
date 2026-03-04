@@ -158,4 +158,87 @@ router.get('/vulnerabilities/:cveId', async (c) => {
     return c.json({ success: true, data: mappedData, took: result.took });
 });
 
+// ============================================================================
+// Vulnerability Write Operations (Phase AG — CRUD Completeness)
+// ============================================================================
+
+import { requireAuth, requireRole } from '../../middleware/auth';
+import { UpdateVulnerabilitySchema, VulnLinkIOCSchema } from '../../lib/schemas';
+
+/** PUT /v1/vulnerabilities/:id — Update vulnerability metadata */
+router.put('/vulnerabilities/:id', requireAuth, requireRole('admin', 'analyst'), async (c) => {
+    const { id } = c.req.param();
+    const body = UpdateVulnerabilitySchema.parse(await c.req.json().catch(() => ({})));
+
+    const setClauses: string[] = ['updated_at = NOW()'];
+    const esc = (s: string) => s.replace(/'/g, "''");
+
+    if (body.severity) setClauses.push(`severity = '${esc(body.severity)}'`);
+    if (body.notes) setClauses.push(`raw_data = COALESCE(raw_data, '{}'::jsonb) || '${JSON.stringify({ notes: body.notes }).replace(/'/g, "''")}'::jsonb`);
+    if (body.tags) setClauses.push(`tags = ARRAY[${body.tags.map(t => `'${esc(t)}'`).join(',')}]`);
+    if (body.exploited !== undefined) setClauses.push(`is_exploited = ${body.exploited}`);
+
+    // Support both UUID and CVE ID lookups
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    const whereCol = isUUID ? 'id' : 'cve_id';
+    const whereVal = isUUID ? id : id.toUpperCase();
+
+    const result = await rawQuery(sql.raw(`
+        UPDATE vulnerabilities SET ${setClauses.join(', ')}
+        WHERE ${whereCol} = '${esc(whereVal)}'
+        RETURNING id, cve_id, severity, is_exploited, updated_at
+    `));
+
+    const row = result.rows?.[0];
+    if (!row) throw new NotFoundError('Vulnerability', id);
+    return c.json({ success: true, data: row });
+});
+
+/** POST /v1/vulnerabilities/:id/link — Link IOC to vulnerability */
+router.post('/vulnerabilities/:id/link', requireAuth, requireRole('admin', 'analyst'), async (c) => {
+    const { id } = c.req.param();
+    const body = VulnLinkIOCSchema.parse(await c.req.json().catch(() => ({})));
+    const esc = (s: string) => s.replace(/'/g, "''");
+
+    // Verify the vulnerability exists
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    const whereCol = isUUID ? 'id' : 'cve_id';
+    const whereVal = isUUID ? id : id.toUpperCase();
+
+    const vulnCheck = await rawQuery(sql.raw(`SELECT id, cve_id FROM vulnerabilities WHERE ${whereCol} = '${esc(whereVal)}' LIMIT 1`));
+    if (!vulnCheck.rows?.[0]) throw new NotFoundError('Vulnerability', id);
+
+    // Create the link in a vuln_ioc_links table (auto-create)
+    await rawQuery(sql.raw(`
+        CREATE TABLE IF NOT EXISTS vuln_ioc_links (
+            id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+            vulnerability_id TEXT NOT NULL,
+            ioc_id TEXT NOT NULL,
+            relationship TEXT NOT NULL DEFAULT 'related-to',
+            notes TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(vulnerability_id, ioc_id)
+        )
+    `));
+
+    const vulnId = (vulnCheck.rows[0] as Record<string, unknown>).id as string;
+    await rawQuery(sql.raw(`
+        INSERT INTO vuln_ioc_links (vulnerability_id, ioc_id, relationship, notes)
+        VALUES ('${esc(vulnId)}', '${esc(body.iocId)}', '${esc(body.relationship)}', ${body.notes ? `'${esc(body.notes)}'` : 'NULL'})
+        ON CONFLICT (vulnerability_id, ioc_id) DO UPDATE SET
+            relationship = EXCLUDED.relationship,
+            notes = EXCLUDED.notes
+    `));
+
+    log.info('Vulnerability-IOC link created', { vulnId, iocId: body.iocId, relationship: body.relationship });
+    return c.json({
+        success: true,
+        data: {
+            vulnerabilityId: vulnId,
+            iocId: body.iocId,
+            relationship: body.relationship,
+        },
+    }, 201);
+});
+
 export default router;

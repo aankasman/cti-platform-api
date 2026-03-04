@@ -278,4 +278,78 @@ alerts.post('/evaluate', requireAuth, async (c) => {
 });
 
 
+// ============================================================================
+// Alert Lifecycle Enhancements (Phase AG — TheHive inspired)
+// ============================================================================
+
+import { AlertEscalateSchema } from '../lib/schemas';
+import { requireRole } from '../middleware/auth';
+
+/**
+ * POST /v1/alerts/:id/escalate
+ * Escalate alert to a higher priority (TheHive alert→case inspired)
+ */
+alerts.post('/:id/escalate', requireAuth, requireRole('admin', 'analyst'), async (c) => {
+    const id = c.req.param('id');
+    const body = AlertEscalateSchema.parse(await c.req.json().catch(() => ({})));
+    const alert = alertStore.find(a => a.id === id);
+
+    if (!alert) {
+        throw new NotFoundError('Alert', id);
+    }
+
+    alert.severity = body.priority;
+    alert.read = false; // Re-flag as unread after escalation
+    alert.metadata = {
+        ...alert.metadata,
+        escalated: true,
+        escalatedAt: new Date().toISOString(),
+        escalatedBy: c.get('user')?.id || 'unknown',
+        assignee: body.assignee || undefined,
+        escalationNotes: body.notes || undefined,
+        escalationTags: body.tags,
+    };
+    alert.updatedAt = new Date().toISOString();
+
+    return c.json({
+        success: true,
+        data: {
+            alertId: id,
+            escalated: true,
+            priority: body.priority,
+            assignee: body.assignee,
+        },
+    });
+});
+
+/**
+ * POST /v1/alerts/bulk-acknowledge
+ * Acknowledge multiple alerts at once
+ */
+alerts.post('/bulk-acknowledge', requireAuth, async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const { ids } = z.object({
+        ids: z.array(z.string().min(1)).min(1).max(500),
+    }).parse(body);
+
+    let acknowledged = 0;
+    for (const id of ids) {
+        const alert = alertStore.find(a => a.id === id);
+        if (alert && !alert.acknowledged) {
+            alert.read = true;
+            alert.acknowledged = true;
+            alert.acknowledgedAt = new Date().toISOString();
+            acknowledged++;
+        }
+    }
+
+    return c.json({
+        success: true,
+        data: {
+            requested: ids.length,
+            acknowledged,
+        },
+    });
+});
+
 export default alerts;

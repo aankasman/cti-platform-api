@@ -7,7 +7,7 @@
  * Simple key-value settings (env var overrides) still use Redis for hot-reload.
  */
 
-import { db, eq } from '@rinjani/db';
+import { db, eq, sql, rawQuery } from '@rinjani/db';
 import { feedsConfig, apiKeySlots, servicesConfig } from '@rinjani/db/schema';
 import { connection } from './redis';
 import { secrets } from './vault';
@@ -417,4 +417,140 @@ export async function deleteCustomService(id: string): Promise<boolean> {
     await db.delete(servicesConfig).where(eq(servicesConfig.id, id));
     log.info('Custom service deleted', { id });
     return true;
+}
+
+// ============================================================================
+// Feed Sync History (Phase AC — MISP/IntelOwl inspired)
+// ============================================================================
+
+export interface FeedSyncRun {
+    id: string;
+    feedId: string;
+    status: 'completed' | 'failed' | 'running';
+    startedAt: string;
+    completedAt: string | null;
+    durationMs: number | null;
+    itemsIngested: number;
+    errors: number;
+    errorDetails: string | null;
+    triggeredBy: 'scheduler' | 'manual';
+}
+
+/** Ensure feed_sync_runs table exists (safe to call multiple times) */
+let _syncTableReady: Promise<void> | null = null;
+async function ensureSyncRunsTable(): Promise<void> {
+    if (_syncTableReady) return _syncTableReady;
+    _syncTableReady = (async () => {
+        try {
+            await rawQuery(`
+                CREATE TABLE IF NOT EXISTS feed_sync_runs (
+                    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+                    feed_id TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'running',
+                    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    completed_at TIMESTAMPTZ,
+                    duration_ms INTEGER,
+                    items_ingested INTEGER DEFAULT 0,
+                    errors INTEGER DEFAULT 0,
+                    error_details TEXT,
+                    triggered_by TEXT NOT NULL DEFAULT 'scheduler'
+                );
+                CREATE INDEX IF NOT EXISTS idx_feed_sync_runs_feed_id ON feed_sync_runs(feed_id);
+                CREATE INDEX IF NOT EXISTS idx_feed_sync_runs_started_at ON feed_sync_runs(started_at DESC);
+            `);
+            log.info('feed_sync_runs table ready');
+        } catch (err) {
+            log.warn('Failed to ensure feed_sync_runs table (non-fatal)', { error: (err as Error).message });
+        }
+    })();
+    return _syncTableReady;
+}
+
+/** Record a feed sync run */
+export async function recordFeedSyncRun(feedId: string, stats: {
+    status: 'completed' | 'failed';
+    startedAt: Date;
+    itemsIngested: number;
+    errors: number;
+    errorDetails?: string;
+    triggeredBy?: 'scheduler' | 'manual';
+}): Promise<void> {
+    await ensureSyncRunsTable();
+    const durationMs = Date.now() - stats.startedAt.getTime();
+    const esc = (s: string) => s.replace(/'/g, "''");
+    const errDetail = stats.errorDetails ? `'${esc(stats.errorDetails)}'` : 'NULL';
+    const trigger = stats.triggeredBy || 'scheduler';
+    await rawQuery(sql.raw(`
+        INSERT INTO feed_sync_runs (feed_id, status, started_at, completed_at, duration_ms, items_ingested, errors, error_details, triggered_by)
+        VALUES ('${esc(feedId)}', '${stats.status}', '${stats.startedAt.toISOString()}', NOW(), ${durationMs}, ${stats.itemsIngested}, ${stats.errors}, ${errDetail}, '${trigger}')
+    `));
+    log.info('Feed sync run recorded', { feedId, status: stats.status, durationMs, items: stats.itemsIngested });
+}
+
+/** Get feed sync history */
+export async function getFeedSyncHistory(feedId: string, limit: number = 20): Promise<FeedSyncRun[]> {
+    await ensureSyncRunsTable();
+    const esc = (s: string) => s.replace(/'/g, "''");
+    const result = await rawQuery<{
+        id: string; feed_id: string; status: string; started_at: string;
+        completed_at: string | null; duration_ms: number | null;
+        items_ingested: number; errors: number; error_details: string | null;
+        triggered_by: string;
+    }>(sql.raw(`
+        SELECT * FROM feed_sync_runs
+        WHERE feed_id = '${esc(feedId)}'
+        ORDER BY started_at DESC
+        LIMIT ${limit}
+    `));
+
+    return (result.rows || []).map(r => ({
+        id: r.id,
+        feedId: r.feed_id,
+        status: r.status as FeedSyncRun['status'],
+        startedAt: r.started_at,
+        completedAt: r.completed_at,
+        durationMs: r.duration_ms,
+        itemsIngested: r.items_ingested,
+        errors: r.errors,
+        errorDetails: r.error_details,
+        triggeredBy: r.triggered_by as FeedSyncRun['triggeredBy'],
+    }));
+}
+
+/** Test feed URL connectivity */
+export async function testFeedConnectivity(feedId: string): Promise<{
+    success: boolean; statusCode?: number; latencyMs: number; message: string;
+}> {
+    const feed = await getFeedById(feedId);
+    if (!feed) return { success: false, latencyMs: 0, message: 'Feed not found' };
+    if (!feed.url) return { success: false, latencyMs: 0, message: 'Feed has no URL configured' };
+
+    // Resolve auth header if needed
+    const headers: Record<string, string> = { 'Accept': '*/*', 'User-Agent': 'Rinjani-CTI/1.0' };
+    if (feed.authHeader && feed.authKeyRef) {
+        const val = await resolveSecret(feed.authKeyRef);
+        if (val) headers[feed.authHeader] = val;
+    }
+
+    const start = performance.now();
+    try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+        const res = await fetch(feed.url, { method: 'HEAD', headers, signal: controller.signal }).catch(
+            // HEAD may not be supported, retry with GET
+            () => fetch(feed.url!, { method: 'GET', headers, signal: controller.signal })
+        );
+        clearTimeout(timeout);
+        const latencyMs = Math.round(performance.now() - start);
+        return {
+            success: res.ok,
+            statusCode: res.status,
+            latencyMs,
+            message: res.ok ? `Reachable (${res.status})` : `HTTP ${res.status}: ${res.statusText}`,
+        };
+    } catch (err) {
+        const latencyMs = Math.round(performance.now() - start);
+        const msg = (err as Error).name === 'AbortError' ? 'Connection timed out (15s)' : ((err as Error).message || 'Connection failed');
+        return { success: false, latencyMs, message: msg };
+    }
 }

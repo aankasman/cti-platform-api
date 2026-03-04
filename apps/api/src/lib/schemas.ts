@@ -919,3 +919,523 @@ export const SSEPublishSchema = z.object({
 });
 export type SSEPublish = z.infer<typeof SSEPublishSchema>;
 
+// ============================================================================
+// Phase AC — Feed Management Enhancements (MISP/IntelOwl inspired)
+// ============================================================================
+
+/** POST /v1/config/feeds/:id/sync — Trigger manual feed sync */
+export const FeedSyncTriggerSchema = z.object({
+    force: z.boolean().default(false),
+});
+export type FeedSyncTrigger = z.infer<typeof FeedSyncTriggerSchema>;
+
+/** GET /v1/config/feeds/:id/history — Feed sync run history */
+export const FeedSyncHistoryQuerySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+export type FeedSyncHistoryQuery = z.infer<typeof FeedSyncHistoryQuerySchema>;
+
+// ============================================================================
+// Phase AD — Indicator Lifecycle Management (MISP/STIX 2.1 inspired)
+// ============================================================================
+
+/** PUT /v1/iocs/:id — Partial update of IOC fields */
+export const IOCUpdateSchema = z.object({
+    severity: z.enum(['critical', 'high', 'medium', 'low', 'info']).optional(),
+    confidence: z.number().int().min(0).max(100).optional(),
+    tags: z.array(z.string()).optional(),
+    threatType: z.string().max(200).optional(),
+    notes: z.string().max(5000).optional(),
+}).refine(obj => Object.keys(obj).length > 0, 'At least one field must be specified');
+export type IOCUpdate = z.infer<typeof IOCUpdateSchema>;
+
+/** POST /v1/iocs/:id/revoke — Mark IOC as revoked (soft-delete) */
+export const IOCRevokeSchema = z.object({
+    reason: z.string().min(1, 'reason is required').max(2000),
+});
+export type IOCRevoke = z.infer<typeof IOCRevokeSchema>;
+
+/** POST /v1/iocs/:id/expire — Set valid_until date */
+export const IOCExpireSchema = z.object({
+    validUntil: z.string().datetime('Must be a valid ISO datetime'),
+});
+export type IOCExpire = z.infer<typeof IOCExpireSchema>;
+
+/** POST /v1/iocs/:id/verdict — Assign analyst verdict */
+export const IOCVerdictSchema = z.object({
+    verdict: z.enum(['malicious', 'suspicious', 'benign', 'unknown']),
+    notes: z.string().max(5000).optional(),
+});
+export type IOCVerdict = z.infer<typeof IOCVerdictSchema>;
+
+/** PUT /v1/sightings/:id — Update sighting */
+export const SightingUpdateSchema = z.object({
+    source: z.string().min(1).max(200).optional(),
+    type: z.enum(['sighting', 'false-positive', 'expiration']).optional(),
+    description: z.string().max(2000).optional(),
+    confidence: z.number().min(0).max(100).optional(),
+}).refine(obj => Object.keys(obj).length > 0, 'At least one field must be specified');
+export type SightingUpdate = z.infer<typeof SightingUpdateSchema>;
+
+// ============================================================================
+// Phase AE — Taxonomy & Tag Namespace System (MISP inspired)
+// ============================================================================
+
+/** POST /v1/taxonomies — Create a custom taxonomy */
+export const CreateTaxonomySchema = z.object({
+    namespace: z.string().min(1).max(100).regex(/^[a-z0-9-]+$/, 'namespace must be lowercase alphanumeric with hyphens'),
+    name: z.string().min(1, 'name is required').max(200),
+    description: z.string().max(2000).default(''),
+    exclusive: z.boolean().default(false),
+});
+export type CreateTaxonomy = z.infer<typeof CreateTaxonomySchema>;
+
+/** POST /v1/taxonomies/:namespace/tag — Add tag to taxonomy */
+export const AddTaxonomyTagSchema = z.object({
+    tag: z.string().min(1, 'tag is required').max(200),
+    description: z.string().max(1000).default(''),
+    colour: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+    numericValue: z.number().int().min(0).optional(),
+});
+export type AddTaxonomyTag = z.infer<typeof AddTaxonomyTagSchema>;
+
+// ============================================================================
+// Phase AF — Enhanced Export & Sharing (IntelOwl/MISP/TheHive inspired)
+// ============================================================================
+
+/** POST /v1/export/misp — Export as MISP event format */
+export const MISPExportSchema = z.object({
+    entityTypes: z.array(z.enum(['iocs', 'vulnerabilities', 'threat-actors'])).default(['iocs']),
+    tlp: z.enum(['white', 'green', 'amber', 'red']).default('green'),
+    limit: z.number().int().min(1).max(10000).default(1000),
+    dateFrom: z.string().optional(),
+    dateTo: z.string().optional(),
+});
+export type MISPExport = z.infer<typeof MISPExportSchema>;
+
+/** POST /v1/export/rules — Export IOCs as IDS rules (Suricata/Snort) */
+export const RuleExportSchema = z.object({
+    format: z.enum(['suricata', 'snort']),
+    iocTypes: z.array(z.enum(['ip', 'domain', 'url', 'hash'])).default(['ip', 'domain']),
+    action: z.enum(['alert', 'drop', 'reject']).default('alert'),
+    severity: z.enum(['critical', 'high', 'medium', 'low']).optional(),
+    limit: z.number().int().min(1).max(50000).default(5000),
+    sid_start: z.number().int().min(1000000).default(9000000),
+});
+export type RuleExport = z.infer<typeof RuleExportSchema>;
+
+/** POST /v1/export/report — Generate intelligence report */
+export const ReportExportSchema = z.object({
+    format: z.enum(['markdown', 'html']).default('markdown'),
+    scope: z.enum(['summary', 'full']).default('summary'),
+    entityTypes: z.array(z.string()).default(['iocs', 'vulnerabilities']),
+    dateFrom: z.string().optional(),
+    dateTo: z.string().optional(),
+    limit: z.number().int().min(1).max(1000).default(100),
+});
+export type ReportExport = z.infer<typeof ReportExportSchema>;
+
+// ============================================================================
+// Phase AG — CRUD Completeness (TheHive inspired)
+// ============================================================================
+
+/** POST /v1/threats/actors — Create a new threat actor */
+export const CreateThreatActorSchema = z.object({
+    name: z.string().min(1, 'name is required').max(300),
+    description: z.string().max(10000).default(''),
+    aliases: z.array(z.string()).default([]),
+    country: z.string().max(100).optional(),
+    sophistication: z.enum(['none', 'minimal', 'intermediate', 'advanced', 'expert', 'innovator', 'strategic']).optional(),
+    resourceLevel: z.enum(['individual', 'club', 'contest', 'team', 'organization', 'government']).optional(),
+    primaryMotivation: z.string().max(200).optional(),
+    secondaryMotivations: z.array(z.string()).optional(),
+    tags: z.array(z.string()).default([]),
+});
+export type CreateThreatActor = z.infer<typeof CreateThreatActorSchema>;
+
+/** PUT /v1/threats/actors/:id — Update threat actor */
+export const UpdateThreatActorSchema = z.object({
+    name: z.string().min(1).max(300).optional(),
+    description: z.string().max(10000).optional(),
+    aliases: z.array(z.string()).optional(),
+    country: z.string().max(100).optional(),
+    sophistication: z.string().max(100).optional(),
+    resourceLevel: z.string().max(100).optional(),
+    primaryMotivation: z.string().max(200).optional(),
+    tags: z.array(z.string()).optional(),
+}).refine(obj => Object.keys(obj).length > 0, 'At least one field must be specified');
+export type UpdateThreatActor = z.infer<typeof UpdateThreatActorSchema>;
+
+/** PUT /v1/vulnerabilities/:id — Update vulnerability metadata */
+export const UpdateVulnerabilitySchema = z.object({
+    severity: z.enum(['critical', 'high', 'medium', 'low', 'info']).optional(),
+    notes: z.string().max(10000).optional(),
+    tags: z.array(z.string()).optional(),
+    exploited: z.boolean().optional(),
+}).refine(obj => Object.keys(obj).length > 0, 'At least one field must be specified');
+export type UpdateVulnerability = z.infer<typeof UpdateVulnerabilitySchema>;
+
+/** POST /v1/vulnerabilities/:id/link — Link IOC to vulnerability */
+export const VulnLinkIOCSchema = z.object({
+    iocId: z.string().uuid('Must be a valid IOC UUID'),
+    relationship: z.enum(['exploits', 'indicates', 'mitigates', 'related-to']).default('related-to'),
+    notes: z.string().max(2000).optional(),
+});
+export type VulnLinkIOC = z.infer<typeof VulnLinkIOCSchema>;
+
+/** POST /v1/alerts/:id/escalate — Escalate alert (TheHive alert→case inspired) */
+export const AlertEscalateSchema = z.object({
+    priority: z.enum(['critical', 'high', 'medium', 'low']).default('medium'),
+    assignee: z.string().max(200).optional(),
+    notes: z.string().max(5000).optional(),
+    tags: z.array(z.string()).default([]),
+});
+export type AlertEscalate = z.infer<typeof AlertEscalateSchema>;
+
+// ============================================================================
+// Phase 7 — Case / Investigation Management (TheHive inspired)
+// ============================================================================
+
+/** POST /v1/cases — Create investigation case */
+export const CreateCaseSchema = z.object({
+    title: z.string().min(1).max(500),
+    description: z.string().max(10000).optional(),
+    severity: z.enum(['critical', 'high', 'medium', 'low']).default('medium'),
+    status: z.enum(['open', 'in-progress', 'resolved', 'closed']).default('open'),
+    assignee: z.string().max(200).optional(),
+    tlp: z.enum(['white', 'green', 'amber', 'red']).default('green'),
+    tags: z.array(z.string()).default([]),
+});
+export type CreateCase = z.infer<typeof CreateCaseSchema>;
+
+/** PUT /v1/cases/:id — Update case */
+export const UpdateCaseSchema = z.object({
+    title: z.string().min(1).max(500).optional(),
+    description: z.string().max(10000).optional(),
+    severity: z.enum(['critical', 'high', 'medium', 'low']).optional(),
+    status: z.enum(['open', 'in-progress', 'resolved', 'closed']).optional(),
+    assignee: z.string().max(200).nullable().optional(),
+    tlp: z.enum(['white', 'green', 'amber', 'red']).optional(),
+    tags: z.array(z.string()).optional(),
+    resolution: z.string().max(5000).optional(),
+}).refine(d => Object.values(d).some(v => v !== undefined), { message: 'At least one field required' });
+export type UpdateCase = z.infer<typeof UpdateCaseSchema>;
+
+/** GET /v1/cases — List cases with filters */
+export const CaseFilterSchema = z.object({
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    status: z.enum(['open', 'in-progress', 'resolved', 'closed']).optional(),
+    severity: z.enum(['critical', 'high', 'medium', 'low']).optional(),
+    assignee: z.string().optional(),
+    q: z.string().optional(),
+});
+
+/** POST /v1/cases/:id/observables — Attach observable to case */
+export const CaseObservableSchema = z.object({
+    entityType: z.enum(['ioc', 'vulnerability', 'threat-actor']),
+    entityId: z.string().min(1),
+    notes: z.string().max(2000).optional(),
+    tags: z.array(z.string()).default([]),
+});
+export type CaseObservable = z.infer<typeof CaseObservableSchema>;
+
+/** POST /v1/cases/:id/tasks — Add task to case */
+export const CaseTaskSchema = z.object({
+    title: z.string().min(1).max(500),
+    description: z.string().max(5000).optional(),
+    status: z.enum(['todo', 'in-progress', 'done']).default('todo'),
+    assignee: z.string().max(200).optional(),
+    dueDate: z.string().datetime().optional(),
+});
+export type CaseTask = z.infer<typeof CaseTaskSchema>;
+
+/** PUT /v1/cases/:id/tasks/:taskId — Update task */
+export const UpdateCaseTaskSchema = z.object({
+    title: z.string().min(1).max(500).optional(),
+    description: z.string().max(5000).optional(),
+    status: z.enum(['todo', 'in-progress', 'done']).optional(),
+    assignee: z.string().max(200).nullable().optional(),
+    dueDate: z.string().datetime().nullable().optional(),
+}).refine(d => Object.values(d).some(v => v !== undefined), { message: 'At least one field required' });
+
+/** POST /v1/cases/:id/timeline — Add timeline entry */
+export const CaseTimelineSchema = z.object({
+    entryType: z.enum(['comment', 'action', 'status-change', 'evidence']).default('comment'),
+    content: z.string().min(1).max(10000),
+});
+
+/** POST /v1/cases/from-alert/:alertId — Create case from alert */
+export const CaseFromAlertSchema = z.object({
+    title: z.string().min(1).max(500).optional(),
+    assignee: z.string().max(200).optional(),
+    tags: z.array(z.string()).default([]),
+});
+
+// ============================================================================
+// Phase 8 — Community Blocklist & IP Reputation (CrowdSec inspired)
+// ============================================================================
+
+/** POST /v1/reputation/report — Submit community report */
+export const ReputationReportSchema = z.object({
+    value: z.string().min(1),
+    type: z.enum(['ip', 'domain', 'url', 'email']),
+    category: z.enum(['malware', 'phishing', 'spam', 'scanning', 'brute-force', 'c2', 'other']).default('other'),
+    confidence: z.number().int().min(0).max(100).default(70),
+    notes: z.string().max(2000).optional(),
+    ttlHours: z.number().int().min(1).max(8760).default(720), // default 30 days
+});
+export type ReputationReport = z.infer<typeof ReputationReportSchema>;
+
+/** POST /v1/reputation/bulk — Bulk reputation check */
+export const BulkReputationSchema = z.object({
+    values: z.array(z.string().min(1)).min(1).max(100),
+    type: z.enum(['ip', 'domain', 'url', 'email', 'auto']).default('auto'),
+});
+
+// ============================================================================
+// Phase 9 — Multi-Analyzer Pipeline (Cortex / IntelOwl inspired)
+// ============================================================================
+
+/** POST /v1/analyzers/run — Run analyzer(s) on observable */
+export const RunAnalyzerSchema = z.object({
+    value: z.string().min(1),
+    type: z.enum(['ip', 'domain', 'url', 'hash', 'email', 'auto']).default('auto'),
+    analyzers: z.array(z.string()).min(1).max(20),
+});
+export type RunAnalyzer = z.infer<typeof RunAnalyzerSchema>;
+
+/** POST /v1/analyzers/scan-chain — Ordered scan chain */
+export const ScanChainSchema = z.object({
+    value: z.string().min(1),
+    type: z.enum(['ip', 'domain', 'url', 'hash', 'email', 'auto']).default('auto'),
+    chain: z.array(z.string()).min(1).max(10),
+    stopOnMalicious: z.boolean().default(false),
+});
+export type ScanChain = z.infer<typeof ScanChainSchema>;
+
+// ============================================================================
+// Phase 11 — IOC Watchlists (Recorded Future / MISP inspired)
+// ============================================================================
+
+/** POST /v1/watchlists — Create watchlist */
+export const CreateWatchlistSchema = z.object({
+    name: z.string().min(1).max(200),
+    description: z.string().max(2000).optional(),
+    visibility: z.enum(['personal', 'team', 'global']).default('personal'),
+    notifyOnHit: z.boolean().default(false),
+    tags: z.array(z.string()).default([]),
+});
+export type CreateWatchlist = z.infer<typeof CreateWatchlistSchema>;
+
+/** PUT /v1/watchlists/:id — Update watchlist */
+export const UpdateWatchlistSchema = z.object({
+    name: z.string().min(1).max(200).optional(),
+    description: z.string().max(2000).optional(),
+    visibility: z.enum(['personal', 'team', 'global']).optional(),
+    notifyOnHit: z.boolean().optional(),
+    tags: z.array(z.string()).optional(),
+}).refine(d => Object.values(d).some(v => v !== undefined), { message: 'At least one field required' });
+
+/** POST /v1/watchlists/:id/entries — Add entry to watchlist */
+export const WatchlistEntrySchema = z.object({
+    value: z.string().min(1).max(500),
+    type: z.enum(['ip', 'domain', 'url', 'hash', 'email', 'cidr']),
+    notes: z.string().max(2000).optional(),
+    expiresAt: z.string().datetime().optional(),
+});
+
+/** POST /v1/watchlists/check — Check value against watchlists */
+export const WatchlistCheckSchema = z.object({
+    value: z.string().min(1),
+});
+
+// ============================================================================
+// Phase 12 — Scheduled Intelligence Reports
+// ============================================================================
+
+/** POST /v1/reports/schedules — Create report schedule */
+export const CreateReportScheduleSchema = z.object({
+    name: z.string().min(1).max(200),
+    schedule: z.enum(['daily', 'weekly', 'monthly']).default('weekly'),
+    format: z.enum(['markdown', 'html']).default('markdown'),
+    scope: z.enum(['summary', 'detailed', 'full']).default('summary'),
+    filters: z.object({
+        entityTypes: z.array(z.string()).optional(),
+        severity: z.enum(['critical', 'high', 'medium', 'low']).optional(),
+        dateRange: z.enum(['24h', '7d', '30d']).default('7d'),
+    }).default({}),
+    delivery: z.object({
+        email: z.string().email().optional(),
+        slack: z.boolean().default(false),
+        inApp: z.boolean().default(true),
+    }).default({}),
+    enabled: z.boolean().default(true),
+});
+export type CreateReportSchedule = z.infer<typeof CreateReportScheduleSchema>;
+
+/** PUT /v1/reports/schedules/:id */
+export const UpdateReportScheduleSchema = z.object({
+    name: z.string().min(1).max(200).optional(),
+    schedule: z.enum(['daily', 'weekly', 'monthly']).optional(),
+    format: z.enum(['markdown', 'html']).optional(),
+    scope: z.enum(['summary', 'detailed', 'full']).optional(),
+    filters: z.object({
+        entityTypes: z.array(z.string()).optional(),
+        severity: z.enum(['critical', 'high', 'medium', 'low']).optional(),
+        dateRange: z.enum(['24h', '7d', '30d']).optional(),
+    }).optional(),
+    delivery: z.object({
+        email: z.string().email().optional(),
+        slack: z.boolean().optional(),
+        inApp: z.boolean().optional(),
+    }).optional(),
+    enabled: z.boolean().optional(),
+}).refine(d => Object.values(d).some(v => v !== undefined), { message: 'At least one field required' });
+
+// ============================================================================
+// Phase 13 — IOC Relationship Management (STIX SRO inspired)
+// ============================================================================
+
+/** POST /v1/relationships — Create explicit relationship */
+export const CreateRelationshipSchema = z.object({
+    sourceType: z.enum(['ioc', 'vulnerability', 'threat-actor', 'campaign', 'malware', 'tool']),
+    sourceId: z.string().min(1),
+    targetType: z.enum(['ioc', 'vulnerability', 'threat-actor', 'campaign', 'malware', 'tool']),
+    targetId: z.string().min(1),
+    relationshipType: z.enum([
+        'related-to', 'derived-from', 'duplicate-of', 'communicates-with',
+        'drops', 'uses', 'targets', 'indicates', 'mitigates', 'attributed-to',
+    ]),
+    confidence: z.number().int().min(0).max(100).default(70),
+    description: z.string().max(2000).optional(),
+});
+export type CreateRelationship = z.infer<typeof CreateRelationshipSchema>;
+
+/** POST /v1/relationships/bulk — Bulk create */
+export const BulkRelationshipSchema = z.object({
+    relationships: z.array(CreateRelationshipSchema).min(1).max(100),
+});
+
+/** GET /v1/relationships — Filter params */
+export const RelationshipFilterSchema = z.object({
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    sourceType: z.string().optional(),
+    targetType: z.string().optional(),
+    relationshipType: z.string().optional(),
+    entityId: z.string().optional(),
+});
+
+// ============================================================================
+// Phase 14 — Threat Landscape API
+// ============================================================================
+
+/** GET /v1/landscape/* — Query params */
+export const LandscapeQuerySchema = z.object({
+    period: z.enum(['24h', '7d', '30d', '90d']).default('7d'),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+// ============================================================================
+// Phase 16 — Campaign Tracking (MISP Events / TheHive inspired)
+// ============================================================================
+
+export const CreateCampaignSchema = z.object({
+    name: z.string().min(1).max(300),
+    description: z.string().max(5000).optional(),
+    status: z.enum(['active', 'dormant', 'concluded', 'suspected']).default('active'),
+    threatLevel: z.enum(['critical', 'high', 'medium', 'low', 'unknown']).default('unknown'),
+    firstSeen: z.string().datetime().optional(),
+    lastSeen: z.string().datetime().optional(),
+    attribution: z.string().max(200).optional(),
+    tags: z.array(z.string()).default([]),
+    tlp: z.enum(['white', 'green', 'amber', 'red']).default('green'),
+});
+export type CreateCampaign = z.infer<typeof CreateCampaignSchema>;
+
+export const UpdateCampaignSchema = z.object({
+    name: z.string().min(1).max(300).optional(),
+    description: z.string().max(5000).optional(),
+    status: z.enum(['active', 'dormant', 'concluded', 'suspected']).optional(),
+    threatLevel: z.enum(['critical', 'high', 'medium', 'low', 'unknown']).optional(),
+    firstSeen: z.string().datetime().optional(),
+    lastSeen: z.string().datetime().optional(),
+    attribution: z.string().max(200).optional(),
+    tags: z.array(z.string()).optional(),
+    tlp: z.enum(['white', 'green', 'amber', 'red']).optional(),
+}).refine(d => Object.values(d).some(v => v !== undefined), { message: 'At least one field required' });
+
+export const CampaignLinkSchema = z.object({
+    entityType: z.enum(['ioc', 'vulnerability', 'threat-actor', 'malware', 'tool']),
+    entityId: z.string().min(1),
+    role: z.enum(['primary', 'supporting', 'observed']).default('observed'),
+    notes: z.string().max(2000).optional(),
+});
+
+export const CampaignFilterSchema = z.object({
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    status: z.string().optional(),
+    threatLevel: z.string().optional(),
+    q: z.string().optional(),
+});
+
+// ============================================================================
+// Phase 17 — IOC Comments & Annotations (TheHive inspired)
+// ============================================================================
+
+export const CreateCommentSchema = z.object({
+    entityType: z.enum(['ioc', 'vulnerability', 'threat-actor', 'campaign', 'case']),
+    entityId: z.string().min(1),
+    content: z.string().min(1).max(5000),
+    visibility: z.enum(['public', 'team', 'private']).default('public'),
+    pinned: z.boolean().default(false),
+});
+
+export const UpdateCommentSchema = z.object({
+    content: z.string().min(1).max(5000).optional(),
+    visibility: z.enum(['public', 'team', 'private']).optional(),
+    pinned: z.boolean().optional(),
+}).refine(d => Object.values(d).some(v => v !== undefined), { message: 'At least one field required' });
+
+// ============================================================================
+// Phase 18 — Data Retention Policies
+// ============================================================================
+
+export const CreateRetentionPolicySchema = z.object({
+    name: z.string().min(1).max(200),
+    entityType: z.enum(['ioc', 'vulnerability', 'alert', 'sighting', 'audit_log', 'notification']),
+    retentionDays: z.number().int().min(1).max(3650),
+    action: z.enum(['delete', 'archive', 'anonymize']).default('delete'),
+    filters: z.object({
+        severity: z.string().optional(),
+        source: z.string().optional(),
+        maxRiskScore: z.number().int().min(0).max(100).optional(),
+    }).default({}),
+    enabled: z.boolean().default(true),
+});
+
+export const UpdateRetentionPolicySchema = z.object({
+    name: z.string().min(1).max(200).optional(),
+    retentionDays: z.number().int().min(1).max(3650).optional(),
+    action: z.enum(['delete', 'archive', 'anonymize']).optional(),
+    filters: z.object({
+        severity: z.string().optional(),
+        source: z.string().optional(),
+        maxRiskScore: z.number().int().min(0).max(100).optional(),
+    }).optional(),
+    enabled: z.boolean().optional(),
+}).refine(d => Object.values(d).some(v => v !== undefined), { message: 'At least one field required' });
+
+// ============================================================================
+// Phase 19 — Enrichment Provider Management
+// ============================================================================
+
+export const UpdateEnrichmentProviderSchema = z.object({
+    enabled: z.boolean().optional(),
+    priority: z.number().int().min(1).max(100).optional(),
+    apiKey: z.string().optional(),
+    rateLimit: z.number().int().min(0).optional(),
+    timeout: z.number().int().min(1000).max(60000).optional(),
+}).refine(d => Object.values(d).some(v => v !== undefined), { message: 'At least one field required' });
