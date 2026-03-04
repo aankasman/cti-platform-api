@@ -1,0 +1,267 @@
+/**
+ * AlienVault OTX Sync Worker
+ * 
+ * Fetches threat intelligence pulses and IOCs from AlienVault OTX API.
+ * https://otx.alienvault.com/api
+ */
+
+import { db } from '@opencti/db';
+import { pulses, iocs, syncLogs } from '@opencti/db/schema';
+import { eq } from 'drizzle-orm';
+
+// =============================================================================
+// Configuration
+// =============================================================================
+
+const ALIENVAULT_BASE_URL = process.env.ALIENVAULT_BASE_URL || 'https://otx.alienvault.com';
+const ALIENVAULT_API_KEY = process.env.ALIENVAULT_API_KEY || '';
+const SYNC_LIMIT = 50; // Pulses per page
+const MAX_PAGES = 100; // Maximum pages to fetch (prevent infinite loops)
+const PAGE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes per page
+const BATCH_SIZE = 100; // IOCs to insert per batch
+
+// =============================================================================
+// Types
+// =============================================================================
+
+interface OTXPulse {
+    id: string;
+    name: string;
+    description: string;
+    author_name: string;
+    TLP: string;
+    tags: string[];
+    adversary: string;
+    targeted_countries: string[];
+    industries: string[];
+    malware_families: string[];
+    attack_ids: string[];
+    indicator_count: number;
+    subscriber_count: number;
+    created: string;
+    modified: string;
+    indicators: OTXIndicator[];
+}
+
+interface OTXIndicator {
+    id: number;
+    indicator: string;
+    type: string;
+    created: string;
+    description: string;
+    title: string;
+}
+
+interface OTXResponse {
+    results: OTXPulse[];
+    count: number;
+    next: string | null;
+    previous: string | null;
+}
+
+// =============================================================================
+// API Client
+// =============================================================================
+
+async function otxRequest<T>(endpoint: string): Promise<T> {
+    const url = `${ALIENVAULT_BASE_URL}${endpoint}`;
+
+    const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+            'X-OTX-API-KEY': ALIENVAULT_API_KEY,
+            'Accept': 'application/json',
+        },
+    });
+
+    if (!response.ok) {
+        throw new Error(`OTX API error: ${response.status} ${response.statusText}`);
+    }
+
+    return response.json() as Promise<T>;
+}
+
+// =============================================================================
+// Sync Functions
+// =============================================================================
+
+interface SyncResult {
+    processed: number;
+    failed: number;
+    errors: string[];
+}
+
+function mapIndicatorType(otxType: string): string {
+    const typeMap: Record<string, string> = {
+        'IPv4': 'ip',
+        'IPv6': 'ip',
+        'domain': 'domain',
+        'hostname': 'hostname',
+        'URL': 'url',
+        'FileHash-MD5': 'hash-md5',
+        'FileHash-SHA1': 'hash-sha1',
+        'FileHash-SHA256': 'hash-sha256',
+        'email': 'email',
+        'CVE': 'cve',
+        'YARA': 'yara',
+    };
+    return typeMap[otxType] || otxType.toLowerCase();
+}
+
+export async function syncAlienVault(): Promise<SyncResult> {
+    console.log('[AlienVault] Starting sync...');
+    console.log(`[AlienVault] API URL: ${ALIENVAULT_BASE_URL}`);
+
+    const result: SyncResult = { processed: 0, failed: 0, errors: [] };
+
+    if (!ALIENVAULT_API_KEY) {
+        result.errors.push('ALIENVAULT_API_KEY not configured');
+        return result;
+    }
+
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+        try {
+            console.log(`[AlienVault] Fetching subscribed pulses page ${page}...`);
+
+            const data = await otxRequest<OTXResponse>(
+                `/api/v1/pulses/subscribed?limit=${SYNC_LIMIT}&page=${page}`
+            );
+
+            if (!data.results || data.results.length === 0) {
+                hasMore = false;
+                break;
+            }
+
+            for (const pulse of data.results) {
+                try {
+                    // Upsert pulse
+                    const existing = await db.select()
+                        .from(pulses)
+                        .where(eq(pulses.otxId, pulse.id))
+                        .limit(1);
+
+                    const pulseData = {
+                        otxId: pulse.id,
+                        name: pulse.name,
+                        description: pulse.description || null,
+                        author: pulse.author_name || null,
+                        tlp: pulse.TLP?.toLowerCase() || 'white',
+                        tags: pulse.tags || [],
+                        adversary: pulse.adversary || null,
+                        targetedCountries: pulse.targeted_countries || [],
+                        industries: pulse.industries || [],
+                        malwareFamilies: pulse.malware_families || [],
+                        attackIds: pulse.attack_ids || [],
+                        indicatorCount: pulse.indicator_count || 0,
+                        subscriberCount: pulse.subscriber_count || 0,
+                        otxCreated: pulse.created ? new Date(pulse.created) : null,
+                        otxModified: pulse.modified ? new Date(pulse.modified) : null,
+                        syncedAt: new Date(),
+                    };
+
+                    if (existing.length > 0) {
+                        await db.update(pulses)
+                            .set({ ...pulseData, updatedAt: new Date() })
+                            .where(eq(pulses.otxId, pulse.id));
+                    } else {
+                        await db.insert(pulses).values(pulseData);
+                    }
+
+                    // Sync indicators from this pulse
+                    if (pulse.indicators && pulse.indicators.length > 0) {
+                        for (const indicator of pulse.indicators) {
+                            try {
+                                const existingIoc = await db.select()
+                                    .from(iocs)
+                                    .where(eq(iocs.value, indicator.indicator))
+                                    .limit(1);
+
+                                const iocData = {
+                                    type: mapIndicatorType(indicator.type),
+                                    value: indicator.indicator,
+                                    source: 'alienvault',
+                                    pulseId: pulse.id,
+                                    tags: pulse.tags || [],
+                                    firstSeen: indicator.created ? new Date(indicator.created) : null,
+                                    lastSeen: new Date(),
+                                };
+
+                                if (existingIoc.length > 0) {
+                                    await db.update(iocs)
+                                        .set({ ...iocData, updatedAt: new Date() })
+                                        .where(eq(iocs.value, indicator.indicator));
+                                } else {
+                                    await db.insert(iocs).values(iocData);
+                                }
+                            } catch (iocError) {
+                                // Silently skip individual IOC errors
+                            }
+                        }
+                    }
+
+                    result.processed++;
+                } catch (pulseError) {
+                    result.failed++;
+                    result.errors.push(`Pulse ${pulse.name}: ${pulseError}`);
+                }
+            }
+
+            hasMore = data.next !== null;
+            page++;
+
+            // Rate limiting - wait 1 second between pages
+            if (hasMore) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+
+        } catch (error) {
+            console.error('[AlienVault] Error fetching pulses:', error);
+            result.errors.push(`Fetch error: ${error}`);
+            hasMore = false;
+        }
+    }
+
+    console.log(`[AlienVault] Sync completed: ${result.processed} pulses, ${result.failed} failed`);
+    return result;
+}
+
+// Log sync results
+async function logSync(result: SyncResult, startedAt: Date): Promise<void> {
+    await db.insert(syncLogs).values({
+        entityType: 'alienvault_pulses',
+        status: result.failed === 0 ? 'success' : 'partial',
+        itemsProcessed: result.processed,
+        itemsFailed: result.failed,
+        errorMessage: result.errors.length > 0 ? result.errors.slice(0, 5).join('\n') : null,
+        startedAt,
+        completedAt: new Date(),
+    });
+}
+
+// Main runner
+export async function runAlienVaultSync(): Promise<void> {
+    const startedAt = new Date();
+    console.log('[AlienVault] Starting full sync...');
+
+    try {
+        const result = await syncAlienVault();
+        await logSync(result, startedAt);
+        console.log('[AlienVault] Full sync completed!');
+    } catch (error) {
+        console.error('[AlienVault] Sync failed:', error);
+        await logSync({ processed: 0, failed: 1, errors: [String(error)] }, startedAt);
+    }
+}
+
+// Run if called directly
+if (import.meta.url === `file://${process.argv[1]}`) {
+    runAlienVaultSync()
+        .then(() => process.exit(0))
+        .catch((error) => {
+            console.error(error);
+            process.exit(1);
+        });
+}

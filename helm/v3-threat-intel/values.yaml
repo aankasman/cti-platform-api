@@ -1,0 +1,258 @@
+# =============================================================================
+# V3 Threat Intelligence API - Helm Values
+# =============================================================================
+
+# Global settings
+global:
+  environment: production
+  imagePullSecrets: []
+
+# -----------------------------------------------------------------------------
+# API Service
+# -----------------------------------------------------------------------------
+api:
+  enabled: true
+  replicaCount: 2
+  
+  image:
+    repository: rinjani/v3-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 3001
+  
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      nginx.ingress.kubernetes.io/rate-limit: "100"
+      nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    hosts:
+      - host: api.threat-intel.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: v3-api-tls
+        hosts:
+          - api.threat-intel.example.com
+  
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  
+  env:
+    NODE_ENV: production
+    PORT: "3001"
+    LOG_LEVEL: info
+    OTEL_ENABLED: "true"
+  
+  envSecrets:
+    - name: DATABASE_URL
+      secretName: v3-secrets
+      secretKey: database-url
+    - name: JWT_SECRET
+      secretName: v3-secrets
+      secretKey: jwt-secret
+    - name: REDIS_URL
+      secretName: v3-secrets
+      secretKey: redis-url
+  
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 3001
+    initialDelaySeconds: 10
+    periodSeconds: 30
+  
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 3001
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+# -----------------------------------------------------------------------------
+# Worker Service
+# -----------------------------------------------------------------------------
+worker:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: rinjani/v3-worker
+    tag: latest
+    pullPolicy: IfNotPresent
+  
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  
+  env:
+    NODE_ENV: production
+    LOG_LEVEL: info
+  
+  envSecrets:
+    - name: DATABASE_URL
+      secretName: v3-secrets
+      secretKey: database-url
+    - name: ALIENVAULT_API_KEY
+      secretName: v3-secrets
+      secretKey: alienvault-api-key
+
+# -----------------------------------------------------------------------------
+# CronJobs for Feed Syncing
+# -----------------------------------------------------------------------------
+cronjobs:
+  enabled: true
+  
+  # CISA KEV sync - every 6 hours
+  cisaSync:
+    enabled: true
+    schedule: "0 */6 * * *"
+    image: rinjani/v3-worker:latest
+    command: ["node", "apps/worker/dist/feeds/cisa.js"]
+  
+  # AlienVault OTX sync - every 4 hours
+  alienvaultSync:
+    enabled: true
+    schedule: "0 */4 * * *"
+    image: rinjani/v3-worker:latest
+    command: ["node", "apps/worker/dist/feeds/alienvault.js"]
+  
+  # MITRE ATT&CK sync - daily at 2am
+  mitreSync:
+    enabled: true
+    schedule: "0 2 * * *"
+    image: rinjani/v3-worker:latest
+    command: ["node", "apps/worker/dist/feeds/mitre.js"]
+
+# -----------------------------------------------------------------------------
+# PostgreSQL (Bitnami subchart)
+# -----------------------------------------------------------------------------
+postgresql:
+  enabled: true
+  auth:
+    database: rinjani_v3
+    username: rinjani
+    existingSecret: v3-secrets
+    secretKeys:
+      adminPasswordKey: postgres-password
+      userPasswordKey: postgres-password
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 250m
+        memory: 1Gi
+
+# -----------------------------------------------------------------------------
+# Redis (Bitnami subchart)
+# -----------------------------------------------------------------------------
+redis:
+  enabled: true
+  auth:
+    enabled: true
+    existingSecret: v3-secrets
+    existingSecretPasswordKey: redis-password
+  master:
+    persistence:
+      enabled: true
+      size: 5Gi
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 256Mi
+
+# -----------------------------------------------------------------------------
+# OpenSearch
+# -----------------------------------------------------------------------------
+opensearch:
+  enabled: false  # Enable when ready for vector search
+  replicas: 1
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+
+# -----------------------------------------------------------------------------
+# Service Account
+# -----------------------------------------------------------------------------
+serviceAccount:
+  create: true
+  name: v3-threat-intel
+  annotations: {}
+
+# -----------------------------------------------------------------------------
+# Pod Security
+# -----------------------------------------------------------------------------
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  fsGroup: 1001
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+
+# -----------------------------------------------------------------------------
+# Network Policy
+# -----------------------------------------------------------------------------
+networkPolicy:
+  enabled: true
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - port: 3001
+
+# -----------------------------------------------------------------------------
+# Pod Disruption Budget
+# -----------------------------------------------------------------------------
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# -----------------------------------------------------------------------------
+# Monitoring
+# -----------------------------------------------------------------------------
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    path: /metrics

@@ -1,0 +1,114 @@
+/**
+ * Database Schema - Threat Intelligence
+ * 
+ * Tables for threat intelligence data (for local caching/sync from Rinjani).
+ */
+
+import { pgTable, uuid, varchar, text, timestamp, jsonb, index } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
+
+// ============================================================================
+// Threat Actors
+// ============================================================================
+
+export const threatActors = pgTable('threat_actors', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    stixId: varchar('stix_id', { length: 255 }).notNull().unique(),
+    name: varchar('name', { length: 500 }).notNull(),
+    description: text('description'),
+    aliases: jsonb('aliases').$type<string[]>().default([]),
+    sophistication: varchar('sophistication', { length: 50 }),
+    resourceLevel: varchar('resource_level', { length: 50 }),
+    primaryMotivation: varchar('primary_motivation', { length: 100 }),
+    secondaryMotivations: jsonb('secondary_motivations').$type<string[]>().default([]),
+    goals: jsonb('goals').$type<string[]>().default([]),
+    labels: jsonb('labels').$type<string[]>().default([]),
+    externalReferences: jsonb('external_references').$type<Record<string, unknown>[]>().default([]),
+    confidence: varchar('confidence', { length: 20 }),
+    country: varchar('country', { length: 100 }),
+    firstSeen: timestamp('first_seen', { withTimezone: true }),
+    lastSeen: timestamp('last_seen', { withTimezone: true }),
+    createdByRef: varchar('created_by_ref', { length: 255 }),
+    objectMarkingRefs: jsonb('object_marking_refs').$type<string[]>().default([]),
+    stixCreated: timestamp('stix_created', { withTimezone: true }),
+    stixModified: timestamp('stix_modified', { withTimezone: true }),
+    syncedAt: timestamp('synced_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+    nameIdx: index('threat_actors_name_idx').on(table.name),
+    stixIdIdx: index('threat_actors_stix_id_idx').on(table.stixId),
+}));
+
+// ============================================================================
+// Indicators
+// ============================================================================
+
+export const indicators = pgTable('indicators', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    stixId: varchar('stix_id', { length: 255 }).notNull().unique(),
+    pattern: text('pattern').notNull(),
+    patternType: varchar('pattern_type', { length: 50 }).notNull(),
+    patternVersion: varchar('pattern_version', { length: 20 }),
+    name: varchar('name', { length: 500 }),
+    description: text('description'),
+    validFrom: timestamp('valid_from', { withTimezone: true }),
+    validUntil: timestamp('valid_until', { withTimezone: true }),
+    labels: jsonb('labels').$type<string[]>().default([]),
+    killChainPhases: jsonb('kill_chain_phases').$type<Record<string, unknown>[]>().default([]),
+    externalReferences: jsonb('external_references').$type<Record<string, unknown>[]>().default([]),
+    confidence: varchar('confidence', { length: 20 }),
+    createdByRef: varchar('created_by_ref', { length: 255 }),
+    objectMarkingRefs: jsonb('object_marking_refs').$type<string[]>().default([]),
+    stixCreated: timestamp('stix_created', { withTimezone: true }),
+    stixModified: timestamp('stix_modified', { withTimezone: true }),
+    syncedAt: timestamp('synced_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+    patternIdx: index('indicators_pattern_idx').on(table.pattern),
+    patternTypeIdx: index('indicators_pattern_type_idx').on(table.patternType),
+    stixIdIdx: index('indicators_stix_id_idx').on(table.stixId),
+}));
+
+// ============================================================================
+// Malware
+// ============================================================================
+
+export const malware = pgTable('malware', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    stixId: varchar('stix_id', { length: 255 }).notNull().unique(),
+    name: varchar('name', { length: 500 }).notNull(),
+    description: text('description'),
+    malwareTypes: jsonb('malware_types').$type<string[]>().default([]),
+    isFamily: varchar('is_family', { length: 10 }),
+    aliases: jsonb('aliases').$type<string[]>().default([]),
+    capabilities: jsonb('capabilities').$type<string[]>().default([]),
+    labels: jsonb('labels').$type<string[]>().default([]),
+    externalReferences: jsonb('external_references').$type<Record<string, unknown>[]>().default([]),
+    stixCreated: timestamp('stix_created', { withTimezone: true }),
+    stixModified: timestamp('stix_modified', { withTimezone: true }),
+    syncedAt: timestamp('synced_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+    nameIdx: index('malware_name_idx').on(table.name),
+    stixIdIdx: index('malware_stix_id_idx').on(table.stixId),
+}));
+
+// ============================================================================
+// Sync Log (for tracking Rinjani sync status)
+// ============================================================================
+
+export const syncLogs = pgTable('sync_logs', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    entityType: varchar('entity_type', { length: 100 }).notNull(),
+    status: varchar('status', { length: 20 }).notNull(), // 'pending', 'success', 'failed'
+    itemsProcessed: jsonb('items_processed').$type<number>().default(0),
+    itemsFailed: jsonb('items_failed').$type<number>().default(0),
+    lastSyncCursor: varchar('last_sync_cursor', { length: 255 }),
+    errorMessage: text('error_message'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});

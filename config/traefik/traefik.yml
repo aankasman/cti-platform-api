@@ -1,0 +1,67 @@
+# ============================================================================
+# Traefik Reverse Proxy Configuration — Rinjani CTI Platform
+# ============================================================================
+#
+# Features:
+#   - Automatic Docker service discovery
+#   - SSL termination via Let's Encrypt (production)
+#   - Health check dashboard
+#   - Rate limiting at edge
+#
+# Usage: Traefik uses Docker labels on services for dynamic routing.
+
+# Entrypoints — listeners on host ports
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
+  # Dev entrypoint (no TLS for local development)
+  webdev:
+    address: ":8888"
+
+# SSL certificate provisioning
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: "${ACME_EMAIL:-admin@rinjanianalytics.io}"
+      storage: /letsencrypt/acme.json
+      httpChallenge:
+        entryPoint: web
+
+# Docker provider — auto-discover services from labels
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: v3-network
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+# Dashboard — available at :8080 (internal only)
+api:
+  dashboard: true
+  insecure: true
+
+# Access logging
+accessLog:
+  filePath: /var/log/traefik/access.log
+  bufferingSize: 100
+
+# Metrics — Prometheus scrape endpoint
+metrics:
+  prometheus:
+    entryPoint: traefik
+    addEntryPointsLabels: true
+    addServicesLabels: true
+    addRoutersLabels: true

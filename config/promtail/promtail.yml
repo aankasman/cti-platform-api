@@ -1,0 +1,61 @@
+# Promtail Configuration — Rinjani CTI Platform
+#
+# Collects logs from Docker containers and ships to Loki.
+# Only targets containers on the v3-network with the telemetry profile.
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://v3-loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Docker container logs
+  - job_name: docker
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: docker
+          __path__: /var/lib/docker/containers/*/*-json.log
+
+    pipeline_stages:
+      # Parse Docker JSON log format
+      - json:
+          expressions:
+            stream: stream
+            log: log
+            time: time
+
+      # Try to parse the log line as JSON (structured logs from Rinjani API services)
+      - json:
+          expressions:
+            level: level
+            service: service
+            message: message
+            correlationId: correlationId
+          source: log
+
+      # Set labels for filtering
+      - labels:
+          stream:
+          level:
+          service:
+
+      # Use the log content as the final output
+      - output:
+          source: log
+
+      # Extract container name from path
+      - regex:
+          source: filename
+          expression: '/var/lib/docker/containers/(?P<container_id>[^/]+)/.*'
+
+      # Timestamp from Docker log
+      - timestamp:
+          source: time
+          format: RFC3339Nano

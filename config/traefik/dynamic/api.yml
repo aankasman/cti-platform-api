@@ -1,0 +1,124 @@
+# ============================================================================
+# Traefik Dynamic Routing — Rinjani CTI Platform (Production)
+# ============================================================================
+#
+# Routes all API traffic directly to the Hono server (v3-api:3001),
+# replacing GraphQL Mesh as the entry point to prevent OOM crashes.
+# GraphQL requests go directly to the Hono GraphQL Yoga handler.
+#
+
+http:
+  # ========================================================================
+  # Routers
+  # ========================================================================
+  routers:
+    # API (v1, v2, auth, admin, health, openapi docs)
+    api-router:
+      rule: "PathPrefix(`/v1`) || PathPrefix(`/v2`) || PathPrefix(`/auth`) || PathPrefix(`/admin`) || PathPrefix(`/api-docs`) || PathPrefix(`/health`) || PathPrefix(`/healthz`) || PathPrefix(`/readyz`)"
+      service: api-service
+      entryPoints:
+        - websecure
+        - webdev
+      middlewares:
+        - api-ratelimit
+        - api-headers
+      tls:
+        certResolver: letsencrypt
+
+    # GraphQL — routed directly to Hono's /graphql endpoint
+    graphql-router:
+      rule: "PathPrefix(`/graphql`)"
+      service: api-service
+      entryPoints:
+        - websecure
+        - webdev
+      middlewares:
+        - api-ratelimit
+        - api-headers
+      tls:
+        certResolver: letsencrypt
+
+    # TAXII 2.1 protocol
+    taxii-router:
+      rule: "PathPrefix(`/taxii2`)"
+      service: api-service
+      entryPoints:
+        - websecure
+        - webdev
+      middlewares:
+        - api-headers
+      tls:
+        certResolver: letsencrypt
+
+    # SSE + WebSocket (real-time events)
+    streaming-router:
+      rule: "PathPrefix(`/sse`) || PathPrefix(`/ws`)"
+      service: api-service
+      entryPoints:
+        - websecure
+        - webdev
+      tls:
+        certResolver: letsencrypt
+
+    # Root / info endpoint
+    root-router:
+      rule: "Path(`/`)"
+      service: api-service
+      entryPoints:
+        - websecure
+        - webdev
+      tls:
+        certResolver: letsencrypt
+
+  # ========================================================================
+  # Services
+  # ========================================================================
+  services:
+    api-service:
+      loadBalancer:
+        servers:
+          - url: "http://v3-api:3001"
+        healthCheck:
+          path: /healthz
+          interval: 10s
+          timeout: 3s
+
+  # ========================================================================
+  # Middlewares
+  # ========================================================================
+  middlewares:
+    # Rate limiting at edge (complements app-level rate limiting)
+    api-ratelimit:
+      rateLimit:
+        average: 100
+        burst: 200
+        period: 1s
+
+    # Security headers
+    api-headers:
+      headers:
+        customResponseHeaders:
+          X-Frame-Options: DENY
+          X-Content-Type-Options: nosniff
+          Referrer-Policy: strict-origin-when-cross-origin
+          X-XSS-Protection: "1; mode=block"
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        accessControlAllowHeaders:
+          - Content-Type
+          - Authorization
+          - X-API-Key
+          - X-Request-Id
+          - X-Organization-Id
+          - Accept-Version
+        accessControlExposeHeaders:
+          - X-Request-Id
+          - X-Response-Time
+          - X-RateLimit-Limit
+          - X-RateLimit-Remaining
+          - X-Cache
+          - X-API-Version

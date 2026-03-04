@@ -1,0 +1,4 @@
+; PgBouncer userlist - format: "username" "password"
+; Password must be md5-hashed or plaintext (md5 preferred)
+; For dev: using plaintext; in production use md5 hash
+"postgres" "postgres"

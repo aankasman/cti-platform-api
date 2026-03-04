@@ -1,0 +1,32 @@
+{
+    "name": "@rinjani/core",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts",
+        "./services": "./src/services/index.ts",
+        "./types": "./src/types/index.ts",
+        "./deduplication": "./src/deduplication.ts",
+        "./stix": "./src/stix.ts",
+        "./webhooks": "./src/webhooks.ts",
+        "./audit": "./src/audit.ts",
+        "./enrichment": "./src/enrichment.ts",
+        "./jobs": "./src/jobs.ts"
+    },
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsc --watch",
+        "test": "vitest run"
+    },
+    "dependencies": {
+        "@rinjani/db": "workspace:*",
+        "drizzle-orm": "^0.30.0",
+        "zod": "^3.22.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.0",
+        "typescript": "^5.4.0",
+        "vitest": "^1.4.0"
+    }
+}

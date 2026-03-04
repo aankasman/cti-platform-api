@@ -1,0 +1,27 @@
+# Grafana Alerting Provisioning — Rinjani CTI Platform
+#
+# Defines contact points and notification policies.
+# Extend with Slack/Discord/PagerDuty integrations as needed.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: rinjani-default
+    receivers:
+      # Webhook — catches all alerts for logging/integration
+      - uid: rinjani-webhook
+        type: webhook
+        settings:
+          url: http://host.docker.internal:3001/v1/ops/webhooks/grafana
+          httpMethod: POST
+        disableResolveMessage: false
+
+policies:
+  - orgId: 1
+    receiver: rinjani-default
+    group_by:
+      - grafana_folder
+      - alertname
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h

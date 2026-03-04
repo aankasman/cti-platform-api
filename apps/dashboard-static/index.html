@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CTI Dashboard - Threat Intelligence</title>
+    <style>
+        :root {
+            --bg-primary: #0a0f1a;
+            --bg-secondary: #131a2e;
+            --bg-card: rgba(19, 26, 46, 0.8);
+            --border: rgba(99, 102, 241, 0.2);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.3);
+            --critical: #ef4444;
+            --high: #f97316;
+            --medium: #eab308;
+            --low: #22c55e;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 32px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--accent), #a855f7);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .logo-text {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent), #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .sync-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .sync-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--low);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--text-primary), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 24px;
+        }
+
+        @media (max-width: 1024px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+        }
+
+        .card-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 8px;
+        }
+
+        .search-input {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 12px;
+            color: var(--text-primary);
+            font-size: 14px;
+            outline: none;
+            width: 200px;
+        }
+
+        .search-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        .btn {
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: #4f46e5;
+            transform: translateY(-1px);
+        }
+
+        .cve-list {
+            padding: 8px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .cve-item {
+            display: flex;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 10px;
+            margin-bottom: 8px;
+            background: var(--bg-primary);
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .cve-item:hover {
+            border-color: var(--accent);
+            transform: translateX(4px);
+        }
+
+        .severity-bar {
+            width: 4px;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+
+        .severity-critical {
+            background: var(--critical);
+        }
+
+        .severity-high {
+            background: var(--high);
+        }
+
+        .severity-medium {
+            background: var(--medium);
+        }
+
+        .severity-low {
+            background: var(--low);
+        }
+
+        .cve-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .cve-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .cve-id {
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--accent);
+        }
+
+        .cve-date {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .cve-vendor {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .cve-desc {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .alert-card {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05));
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .alert-list {
+            padding: 12px;
+        }
+
+        .alert-item {
+            padding: 12px;
+            background: var(--bg-primary);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            border-left: 3px solid var(--critical);
+        }
+
+        .alert-title {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .alert-due {
+            font-size: 12px;
+            color: var(--critical);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 12px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <div class="logo-icon">🛡️</div>
+                <span class="logo-text">CTI Dashboard</span>
+            </div>
+            <div class="sync-status">
+                <div class="sync-dot"></div>
+                <span id="syncTime">Synced just now</span>
+            </div>
+        </header>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total CVEs</div>
+                <div class="stat-value" id="statCves">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">IOCs</div>
+                <div class="stat-value" id="statIocs">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">OTX Pulses</div>
+                <div class="stat-value" id="statPulses">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Last Sync</div>
+                <div class="stat-value" id="statSync">-</div>
+            </div>
+        </div>
+
+        <div class="main-grid">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">📋 Known Exploited Vulnerabilities (CISA KEV)</span>
+                    <div class="search-box">
+                        <input type="text" class="search-input" id="searchInput" placeholder="Search CVE...">
+                        <button class="btn" onclick="searchCves()">Search</button>
+                    </div>
+                </div>
+                <div class="cve-list" id="cveList">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        Loading vulnerabilities...
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <div class="card alert-card" style="margin-bottom: 16px;">
+                    <div class="card-header">
+                        <span class="card-title">🚨 Critical Alerts - Due Today</span>
+                    </div>
+                    <div class="alert-list" id="alertList">
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            Loading...
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">📊 Severity Breakdown</span>
+                    </div>
+                    <div style="padding: 16px;">
+                        <div id="severityStats" style="font-size: 14px; color: var(--text-secondary);">
+                            Loading...
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: 16px;">
+                    <div class="card-header">
+                        <span class="card-title">🌐 Malicious Domains (OTX)</span>
+                    </div>
+                    <div class="alert-list" id="iocList" style="max-height: 250px; overflow-y: auto;">
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            Loading IOCs...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3001/v1';
+
+        function formatNumber(n) {
+            return new Intl.NumberFormat().format(n);
+        }
+
+        function formatDate(d) {
+            if (!d) return 'N/A';
+            return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function getSeverityClass(severity) {
+            return `severity-${severity || 'high'}`;
+        }
+
+        async function fetchStats() {
+            try {
+                const res = await fetch(`${API_BASE}/stats`);
+                const { data } = await res.json();
+
+                document.getElementById('statCves').textContent = formatNumber(data.counts.vulnerabilities);
+                document.getElementById('statIocs').textContent = formatNumber(data.counts.iocs);
+                document.getElementById('statPulses').textContent = formatNumber(data.counts.pulses);
+
+                if (data.recentSyncs.length > 0) {
+                    const lastSync = new Date(data.recentSyncs[0].completedAt);
+                    document.getElementById('statSync').textContent = lastSync.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                    document.getElementById('syncTime').textContent = `Synced ${formatDate(lastSync)}`;
+                }
+            } catch (e) {
+                console.error('Failed to fetch stats:', e);
+            }
+        }
+
+        async function fetchCves(search = '') {
+            try {
+                const url = search
+                    ? `${API_BASE}/vulnerabilities?pageSize=50&q=${encodeURIComponent(search)}`
+                    : `${API_BASE}/vulnerabilities?pageSize=50`;
+
+                const res = await fetch(url);
+                const { data } = await res.json();
+
+                const list = document.getElementById('cveList');
+
+                if (data.items.length === 0) {
+                    list.innerHTML = '<div class="loading">No vulnerabilities found</div>';
+                    return;
+                }
+
+                list.innerHTML = data.items.map(cve => `
+                    <div class="cve-item" onclick="showCveDetail('${cve.cveId}')">
+                        <div class="severity-bar ${getSeverityClass(cve.severity)}"></div>
+                        <div class="cve-content">
+                            <div class="cve-header">
+                                <span class="cve-id">${cve.cveId}</span>
+                                <span class="cve-date">${formatDate(cve.exploitAddedDate)}</span>
+                            </div>
+                            <div class="cve-vendor">${cve.vendorProject || 'Unknown'} - ${cve.product || 'N/A'}</div>
+                            <div class="cve-desc">${cve.description || 'No description available'}</div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to fetch CVEs:', e);
+                document.getElementById('cveList').innerHTML = '<div class="loading">Failed to load</div>';
+            }
+        }
+
+        async function fetchAlerts() {
+            try {
+                const today = new Date().toISOString().split('T')[0];
+                const res = await fetch(`${API_BASE}/vulnerabilities?pageSize=10&dateTo=${today}&severity=critical`);
+                const { data } = await res.json();
+
+                const list = document.getElementById('alertList');
+
+                if (data.items.length === 0) {
+                    list.innerHTML = '<div style="padding: 12px; color: var(--text-secondary);">No critical alerts</div>';
+                    return;
+                }
+
+                list.innerHTML = data.items.slice(0, 5).map(cve => `
+                    <div class="alert-item">
+                        <div class="alert-title">${cve.cveId}</div>
+                        <div class="alert-due">Due: ${formatDate(cve.dueDate)}</div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to fetch alerts:', e);
+            }
+        }
+
+        async function fetchSeverityStats() {
+            try {
+                const critRes = await fetch(`${API_BASE}/vulnerabilities?severity=critical&pageSize=1`);
+                const highRes = await fetch(`${API_BASE}/vulnerabilities?severity=high&pageSize=1`);
+
+                const critData = await critRes.json();
+                const highData = await highRes.json();
+
+                document.getElementById('severityStats').innerHTML = `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+                        <span>🔴 Critical</span>
+                        <span style="color: var(--critical); font-weight: 600;">${formatNumber(critData.data.pagination.totalItems)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>🟠 High</span>
+                        <span style="color: var(--high); font-weight: 600;">${formatNumber(highData.data.pagination.totalItems)}</span>
+                    </div>
+                `;
+            } catch (e) {
+                console.error('Failed to fetch severity stats:', e);
+            }
+        }
+
+        async function fetchIOCs() {
+            try {
+                const res = await fetch(`${API_BASE}/iocs?type=domain&pageSize=15`);
+                const { data } = await res.json();
+
+                const list = document.getElementById('iocList');
+
+                if (!data.items || data.items.length === 0) {
+                    list.innerHTML = '<div style="padding: 12px; color: var(--text-secondary);">No IOCs found</div>';
+                    return;
+                }
+
+                list.innerHTML = data.items.map(ioc => `
+                    <div class="alert-item" style="border-left-color: var(--high);">
+                        <div class="alert-title" style="font-family: monospace;">${ioc.value}</div>
+                        <div style="font-size: 11px; color: var(--text-secondary);">
+                            ${ioc.threatType || 'Unknown'} • ${ioc.source || 'abuse.ch'}
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to fetch IOCs:', e);
+                document.getElementById('iocList').innerHTML = '<div style="padding: 12px; color: var(--text-secondary);">Failed to load IOCs</div>';
+            }
+        }
+
+        function searchCves() {
+            const query = document.getElementById('searchInput').value;
+            fetchCves(query);
+        }
+
+        function showCveDetail(cveId) {
+            window.open(`https://nvd.nist.gov/vuln/detail/${cveId}`, '_blank');
+        }
+
+        // Enter key to search
+        document.getElementById('searchInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchCves();
+        });
+
+        // Initial load
+        fetchStats();
+        fetchCves();
+        fetchAlerts();
+        fetchSeverityStats();
+        fetchIOCs();
+
+        // Auto-refresh every 60 seconds
+        setInterval(() => {
+            fetchStats();
+            fetchCves();
+            fetchIOCs();
+        }, 60000);
+    </script>
+</body>
+
+</html>

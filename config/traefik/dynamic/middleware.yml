@@ -1,0 +1,41 @@
+# ============================================================================
+# Traefik Dynamic Middleware Configuration
+# ============================================================================
+
+http:
+  middlewares:
+    # Rate limiting at the edge (before requests reach the API)
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 200
+        period: 1m
+
+    # Security headers (defense-in-depth, supplements Hono's secureHeaders)
+    secure-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        frameDeny: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 31536000
+        customFrameOptionsValue: "SAMEORIGIN"
+        referrerPolicy: "strict-origin-when-cross-origin"
+
+    # GZIP compression at edge
+    compress:
+      compress:
+        excludedContentTypes:
+          - "text/event-stream"
+
+    # Circuit breaker — protects downstream services
+    circuit-breaker:
+      circuitBreaker:
+        expression: "LatencyAtQuantileMS(50.0) > 2000 || NetworkErrorRatio() > 0.10"
+
+    # Retry on transient failures
+    retry:
+      retry:
+        attempts: 3
+        initialInterval: 100ms

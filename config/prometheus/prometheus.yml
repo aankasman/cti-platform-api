@@ -1,0 +1,66 @@
+# Prometheus Configuration — Rinjani CTI Platform
+#
+# Scrapes metrics from:
+#   - API server (custom metrics + OTEL)
+#   - Node Exporter (host metrics, if deployed)
+#   - Redis Exporter (if deployed)
+#   - PostgreSQL Exporter (if deployed)
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+# Alert rules
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # API Server metrics (runs on host, not in Docker)
+  - job_name: 'rinjani-api'
+    metrics_path: '/v1/ops/metrics/prometheus'
+    scheme: http
+    static_configs:
+      - targets: ['host.docker.internal:3001']
+        labels:
+          service: 'rinjani-api'
+          env: 'development'
+    scrape_interval: 15s
+    params:
+      api_key: ['cti-dev-key-2026']  # switch to prom-scraper-2026 after API restart
+
+  # Traefik metrics (enable when gateway profile is active)
+  # - job_name: 'traefik'
+  #   static_configs:
+  #     - targets: ['v3-traefik:8080']
+  #   metrics_path: '/metrics'
+  #   scrape_interval: 15s
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Redis Exporter — native Redis metrics (memory, clients, ops/sec)
+  - job_name: 'redis-exporter'
+    static_configs:
+      - targets: ['v3-redis-exporter:9121']
+        labels:
+          service: 'redis'
+          env: 'development'
+
+  # PostgreSQL Exporter — native PG metrics (connections, locks, replication)
+  - job_name: 'postgres-exporter'
+    static_configs:
+      - targets: ['v3-postgres-exporter:9187']
+        labels:
+          service: 'postgresql'
+          env: 'development'
+
+  # OpenSearch Exporter — cluster health, indices, shards
+  - job_name: 'opensearch-exporter'
+    static_configs:
+      - targets: ['v3-opensearch-exporter:9114']
+        labels:
+          service: 'opensearch'
+          env: 'development'

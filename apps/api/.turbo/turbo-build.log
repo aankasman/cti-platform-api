@@ -1,0 +1,7 @@
+
+> @rinjani/api@0.1.0 build /home/anaconda/Documents/Blockchains/Forking_Projects/CTI_Platform/v3-backend-api-rinjani/apps/api
+> tsc
+
+src/routes/v1/atlas.ts(147,52): error TS2554: Expected 1 arguments, but got 2.
+src/routes/v1/fight.ts(143,52): error TS2554: Expected 1 arguments, but got 2.
+ ELIFECYCLE  Command failed with exit code 2.

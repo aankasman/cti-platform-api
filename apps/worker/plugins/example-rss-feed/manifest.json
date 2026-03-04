@@ -1,0 +1,9 @@
+{
+    "name": "example-rss-feed",
+    "version": "1.0.0",
+    "description": "Example RSS feed plugin for threat intelligence blogs",
+    "author": "RinjaniAnalytics Team",
+    "main": "index.ts",
+    "schedule": "0 */4 * * *",
+    "enabled": false
+}

@@ -1,0 +1,14 @@
+
+> @rinjani/gateway@1.0.0 test /home/anaconda/Documents/Blockchains/Forking_Projects/CTI_Platform/v3-backend-api-rinjani/apps/gateway
+> vitest run "--run" "apps/api/src/__tests__/notifications.test.ts"
+
+
+ RUN  v1.6.1 /home/anaconda/Documents/Blockchains/Forking_Projects/CTI_Platform/v3-backend-api-rinjani/apps/gateway
+
+filter:  apps/api/src/__tests__/notifications.test.ts
+include: __tests__/**/*.{test,spec}.ts
+exclude:  **/node_modules/**, **/dist/**, **/cypress/**, **/.{idea,git,cache,output,temp}/**, **/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*
+watch exclude:  **/node_modules/**, **/dist/**
+
+No test files found, exiting with code 1
+ ELIFECYCLE  Test failed. See above for more details.

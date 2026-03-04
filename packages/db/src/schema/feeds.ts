@@ -1,0 +1,123 @@
+/**
+ * Intel Feed Database Schema
+ * 
+ * Tables for storing threat intelligence data from external feeds:
+ * - iocs: Indicators of Compromise (IPs, domains, hashes, URLs)
+ * - vulnerabilities: CVE records with CVSS scores and CISA KEV flags
+ * - pulses: AlienVault OTX threat reports
+ */
+
+import { pgTable, text, timestamp, uuid, integer, numeric, boolean, jsonb, date, index } from 'drizzle-orm/pg-core';
+
+// =============================================================================
+// IOCs (Indicators of Compromise)
+// =============================================================================
+export const iocs = pgTable('iocs', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    type: text('type').notNull(), // ip, domain, url, hash-md5, hash-sha1, hash-sha256, email, hostname
+    value: text('value').unique().notNull(),
+    source: text('source').notNull(), // alienvault, abusessl, virustotal, misp
+    threatType: text('threat_type'), // malware, c2, phishing, ransomware, botnet
+    confidence: integer('confidence'), // 0-100
+    severity: text('severity'), // low, medium, high, critical
+    firstSeen: timestamp('first_seen'),
+    lastSeen: timestamp('last_seen'),
+    tags: text('tags').array(),
+    pulseId: text('pulse_id'), // AlienVault pulse reference
+    rawData: jsonb('raw_data'),
+
+    // Enrichment persistence (from on-demand enrichment via external APIs)
+    enrichmentScore: integer('enrichment_score'),             // 0-100 overall risk score
+    enrichmentLevel: text('enrichment_level'),                 // low, medium, high, critical
+    enrichmentTags: text('enrichment_tags').array(),           // auto-generated tags from enrichment
+    enrichmentData: jsonb('enrichment_data'),                  // full per-source enrichment results
+    enrichedAt: timestamp('enriched_at'),                      // last enrichment timestamp
+
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    typeIdx: index('iocs_type_idx').on(table.type),
+    sourceIdx: index('iocs_source_idx').on(table.source),
+    valueIdx: index('iocs_value_idx').on(table.value),
+    threatTypeIdx: index('iocs_threat_type_idx').on(table.threatType),
+}));
+
+// =============================================================================
+// Vulnerabilities (CVE)
+// =============================================================================
+export const vulnerabilities = pgTable('vulnerabilities', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    cveId: text('cve_id').unique().notNull(),
+    description: text('description'),
+    cvssScore: numeric('cvss_score', { precision: 3, scale: 1 }),
+    cvssVector: text('cvss_vector'),
+    severity: text('severity'), // none, low, medium, high, critical
+    cweId: text('cwe_id'),
+
+    // CISA KEV (Known Exploited Vulnerabilities)
+    isExploited: boolean('is_exploited').default(false),
+    exploitAddedDate: date('exploit_added_date'),
+    dueDate: date('due_date'), // CISA remediation deadline
+
+    // Affected products
+    vendorProject: text('vendor_project'),
+    product: text('product'),
+
+    // References
+    references: text('references').array(),
+
+    // Timestamps
+    publishedDate: timestamp('published_date'),
+    lastModified: timestamp('last_modified'),
+    rawData: jsonb('raw_data'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+    syncedAt: timestamp('synced_at'),
+}, (table) => ({
+    cveIdIdx: index('vulnerabilities_cve_id_idx').on(table.cveId),
+    severityIdx: index('vulnerabilities_severity_idx').on(table.severity),
+    isExploitedIdx: index('vulnerabilities_is_exploited_idx').on(table.isExploited),
+}));
+
+// =============================================================================
+// Pulses (AlienVault OTX)
+// =============================================================================
+export const pulses = pgTable('pulses', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    otxId: text('otx_id').unique().notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    author: text('author'),
+    tlp: text('tlp'), // white, green, amber, red
+
+    // Classification
+    tags: text('tags').array(),
+    adversary: text('adversary'),
+    targetedCountries: text('targeted_countries').array(),
+    industries: text('industries').array(),
+    malwareFamilies: text('malware_families').array(),
+    attackIds: text('attack_ids').array(), // MITRE ATT&CK IDs
+
+    // Metrics
+    indicatorCount: integer('indicator_count'),
+    subscriberCount: integer('subscriber_count'),
+
+    // Timestamps
+    otxCreated: timestamp('otx_created'),
+    otxModified: timestamp('otx_modified'),
+    rawData: jsonb('raw_data'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+    syncedAt: timestamp('synced_at'),
+}, (table) => ({
+    otxIdIdx: index('pulses_otx_id_idx').on(table.otxId),
+    adversaryIdx: index('pulses_adversary_idx').on(table.adversary),
+}));
+
+// Type exports
+export type IOC = typeof iocs.$inferSelect;
+export type NewIOC = typeof iocs.$inferInsert;
+export type Vulnerability = typeof vulnerabilities.$inferSelect;
+export type NewVulnerability = typeof vulnerabilities.$inferInsert;
+export type Pulse = typeof pulses.$inferSelect;
+export type NewPulse = typeof pulses.$inferInsert;

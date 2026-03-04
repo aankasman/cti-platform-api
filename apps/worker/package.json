@@ -1,0 +1,33 @@
+{
+    "name": "@rinjani/worker",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "tsx watch src/index.ts",
+        "dev:workers": "tsx watch src/worker-entry.ts",
+        "build": "tsc",
+        "start": "node dist/index.js",
+        "start:workers": "tsx src/worker-entry.ts",
+        "sync": "tsx src/sync.ts",
+        "sync:daemon": "tsx src/index.ts",
+        "sync:feeds": "tsx src/feeds/index.ts all",
+        "sync:alienvault": "tsx src/feeds/index.ts alienvault",
+        "sync:cisa": "tsx src/feeds/index.ts cisa",
+        "sync:abusessl": "tsx src/feeds/index.ts abusessl",
+        "feeds:daemon": "tsx src/feeds/index.ts daemon"
+    },
+    "dependencies": {
+        "@rinjani/core": "workspace:*",
+        "@rinjani/db": "workspace:*",
+        "bullmq": "^5.67.2",
+        "dotenv": "^17.2.3",
+        "drizzle-orm": "^0.30.0",
+        "ioredis": "^5.9.2"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.0",
+        "tsx": "^4.7.0",
+        "typescript": "^5.4.0"
+    }
+}

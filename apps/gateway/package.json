@@ -1,0 +1,37 @@
+{
+    "name": "@rinjani/gateway",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "NODE_OPTIONS='--max-old-space-size=2048' GATEWAY_UNIFIED=1 tsx watch src/index.ts",
+        "build": "tsc --noEmit",
+        "start": "GATEWAY_UNIFIED=1 tsx src/index.ts",
+        "test": "vitest run"
+    },
+    "dependencies": {
+        "@rinjani/api": "workspace:*",
+        "@graphql-mesh/graphql": "^0.104.25",
+        "@graphql-mesh/merger-stitching": "^0.105.25",
+        "@graphql-mesh/plugin-response-cache": "^0.104.27",
+        "@graphql-mesh/runtime": "^0.106.25",
+        "@graphql-mesh/store": "^0.104.25",
+        "@graphql-mesh/types": "^0.104.21",
+        "@graphql-mesh/utils": "^0.104.23",
+        "@graphql-tools/delegate": "^10.2.0",
+        "@graphql-tools/executor-http": "^1.1.0",
+        "@graphql-tools/schema": "^10.0.0",
+        "@graphql-tools/stitch": "^9.4.0",
+        "@graphql-tools/wrap": "^10.0.0",
+        "@hono/node-server": "^1.8.0",
+        "graphql": "^16.9.0",
+        "graphql-yoga": "^5.18.0",
+        "hono": "^4.3.0"
+    },
+    "devDependencies": {
+        "@types/node": "^22.0.0",
+        "tsx": "^4.7.0",
+        "typescript": "^5.4.0",
+        "vitest": "^1.4.0"
+    }
+}

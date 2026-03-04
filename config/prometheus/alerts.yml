@@ -1,0 +1,182 @@
+# Prometheus Alert Rules — Rinjani CTI Platform
+#
+# Evaluated every 15s (global evaluation_interval).
+# Alert names prefixed with "Rinjani" for Grafana filtering.
+
+groups:
+  - name: rinjani-api
+    rules:
+      # API target unreachable
+      - alert: RinjaniAPIDown
+        expr: up{job="rinjani-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Rinjani API is unreachable"
+          description: "Prometheus cannot scrape the API at {{ $labels.instance }} for over 1 minute."
+
+      # High average response time
+      - alert: RinjaniHighResponseTime
+        expr: rinjani_http_response_time_avg_ms > 1000
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Rinjani API response time is high"
+          description: "Average response time is {{ $value }}ms (threshold: 1000ms)."
+
+      # Elevated error rate
+      - alert: RinjaniHighErrorRate
+        expr: rinjani_http_errors_total > 100
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Rinjani API error count is high"
+          description: "Total HTTP errors: {{ $value }}."
+
+  - name: rinjani-queue
+    rules:
+      # Failed enrichment jobs
+      - alert: RinjaniQueueFailures
+        expr: rinjani_queue_failed > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Enrichment queue has failed jobs"
+          description: "{{ $value }} failed jobs detected in the enrichment queue."
+
+      # Queue backlog growing
+      - alert: RinjaniQueueBacklog
+        expr: rinjani_queue_waiting > 100
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Enrichment queue backlog is growing"
+          description: "{{ $value }} jobs waiting in queue for over 10 minutes."
+
+  - name: rinjani-infra
+    rules:
+      # Redis down
+      - alert: RinjaniRedisDown
+        expr: rinjani_redis_status == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Redis is unreachable from Rinjani API"
+          description: "Redis health check failed for over 1 minute."
+
+      # PostgreSQL down
+      - alert: RinjaniPostgresDown
+        expr: rinjani_postgres_status == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "PostgreSQL is unreachable from Rinjani API"
+          description: "PostgreSQL health check failed for over 1 minute."
+
+      # OpenSearch down
+      - alert: RinjaniOpenSearchDown
+        expr: rinjani_opensearch_status == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "OpenSearch is unreachable from Rinjani API"
+          description: "OpenSearch health check failed for over 2 minutes."
+
+      # Neo4j down
+      - alert: RinjaniNeo4jDown
+        expr: rinjani_neo4j_status == 0
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Neo4j is unreachable from Rinjani API"
+          description: "Neo4j health check failed for over 2 minutes."
+
+  # ============================================================================
+  # Exporter-based Infrastructure Alerts
+  # ============================================================================
+  - name: rinjani-exporters
+    rules:
+      # Redis memory usage > 85%
+      - alert: RedisHighMemory
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Redis memory usage exceeds 85%"
+          description: "Redis instance {{ $labels.instance }} is using {{ $value | humanizePercentage }} of max memory."
+
+      # PostgreSQL active connections approaching limit
+      - alert: PostgresHighConnections
+        expr: pg_stat_activity_count > 150
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "PostgreSQL connection count is high"
+          description: "{{ $value }} active connections detected (threshold: 150)."
+
+      # PostgreSQL deadlocks detected
+      - alert: PostgresDeadlocks
+        expr: rate(pg_stat_database_deadlocks[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "PostgreSQL deadlocks detected"
+          description: "Database {{ $labels.datname }} has experienced deadlocks in the last 5 minutes."
+
+      # OpenSearch cluster RED
+      - alert: OpenSearchClusterRed
+        expr: elasticsearch_cluster_health_status{color="red"} == 1
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "OpenSearch cluster health is RED"
+          description: "Cluster has unassigned shards — data loss may be occurring."
+
+      # OpenSearch cluster YELLOW (sustained)
+      - alert: OpenSearchClusterYellow
+        expr: elasticsearch_cluster_health_status{color="yellow"} == 1
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "OpenSearch cluster health is YELLOW for 10+ minutes"
+          description: "Replica shards are unassigned. Cluster is operational but not fully redundant."
+
+      # API latency sustained above 500ms
+      - alert: RinjaniHighLatencyP95
+        expr: rinjani_http_response_time_avg_ms > 500
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "API response time exceeds 500ms"
+          description: "Average response time is {{ $value }}ms (threshold: 500ms)."
+

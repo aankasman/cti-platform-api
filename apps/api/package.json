@@ -1,0 +1,51 @@
+{
+    "name": "@rinjani/api",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "tsx watch src/index.ts",
+        "build": "tsc",
+        "start": "node dist/index.js",
+        "test": "vitest run",
+        "lint": "eslint src/"
+    },
+    "dependencies": {
+        "@bull-board/api": "^6.16.4",
+        "@bull-board/hono": "^6.16.4",
+        "@hono/node-server": "^1.11.0",
+        "@opensearch-project/opensearch": "^2.6.0",
+        "@opentelemetry/auto-instrumentations-node": "^0.69.0",
+        "@opentelemetry/exporter-metrics-otlp-http": "^0.212.0",
+        "@opentelemetry/exporter-trace-otlp-http": "^0.212.0",
+        "@opentelemetry/resources": "^2.5.1",
+        "@opentelemetry/sdk-metrics": "^2.5.1",
+        "@opentelemetry/sdk-node": "^0.212.0",
+        "@opentelemetry/semantic-conventions": "^1.39.0",
+        "@pothos/core": "^4.12.0",
+        "@rinjani/core": "workspace:*",
+        "@rinjani/db": "workspace:*",
+        "@types/d3-force": "^3.0.10",
+        "@xenova/transformers": "^2.17.2",
+        "bullmq": "^5.67.2",
+        "d3-force": "^3.0.0",
+        "dataloader": "^2.2.3",
+        "exa-js": "^2.3.0",
+        "graphql": "^16.12.0",
+        "graphql-yoga": "^5.18.0",
+        "hono": "^4.3.0",
+        "ioredis": "^5.9.2",
+        "neo4j-driver": "^6.0.1",
+        "nodemailer": "^8.0.1",
+        "pg": "^8.18.0",
+        "zod": "^3.22.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.0",
+        "@types/nodemailer": "^7.0.9",
+        "@types/pg": "^8.16.0",
+        "tsx": "^4.7.0",
+        "typescript": "^5.4.0",
+        "vitest": "^1.4.0"
+    }
+}

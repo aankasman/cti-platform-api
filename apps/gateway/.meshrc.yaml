@@ -1,0 +1,68 @@
+# ============================================================================
+# GraphQL Mesh Gateway Configuration (Unified Mode)
+#
+# Port 4000 serves everything — API routes, GraphQL, SSE, WebSocket.
+# The API app runs in-process; no external upstream needed.
+#
+# Sources:
+#   1. cti-graphql  → In-process Pothos GraphQL subgraph
+#   2. cti-rest     → REST API via OpenAPI spec (same port)
+# ============================================================================
+
+sources:
+  # ── Source 1: Pothos GraphQL (in-process on same port) ─────────────────────
+  - name: cti-graphql
+    handler:
+      graphql:
+        endpoint: ${CTI_API_GRAPHQL_URL:-http://localhost:4000}/graphql
+
+  # ── Source 2: REST API via OpenAPI (in-process on same port) ───────────────
+  - name: cti-rest
+    handler:
+      openapi:
+        source: ${CTI_API_URL:-http://localhost:4000}/api-docs/json
+        baseUrl: ${CTI_API_URL:-http://localhost:4000}
+        operationHeaders:
+          X-API-Key: "{context.headers['x-api-key']}"
+          Authorization: "{context.headers['authorization']}"
+
+# ── Type Extensions ─────────────────────────────────────────────────────────
+# Cross-source stitching: link REST data to GraphQL types
+additionalTypeDefs: |
+  extend type IOC {
+    """IOC enrichment data from intelligence sources"""
+    enrichment: JSON
+  }
+  extend type ThreatActor {
+    """Alerts related to this threat actor"""
+    alerts: [JSON]
+  }
+  extend type Query {
+    """Audit log entries"""
+    auditLogs(limit: Int): [JSON]
+    """System health status"""
+    systemHealth: JSON
+  }
+
+# ── Additional Resolvers ────────────────────────────────────────────────────
+additionalResolvers:
+  - ./src/additionalResolvers.ts
+
+# ── Serve Configuration ─────────────────────────────────────────────────────
+serve:
+  port: ${GATEWAY_PORT:-4000}
+  cors:
+    origin: "*"
+    credentials: true
+    allowedHeaders:
+      - Content-Type
+      - Authorization
+      - X-API-Key
+      - X-Request-Id
+  playground: true
+
+# ── Plugins ─────────────────────────────────────────────────────────────────
+plugins:
+  - responseCache:
+      ttl: 30000
+      includeExtensionMetadata: true

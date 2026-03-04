@@ -1,0 +1,675 @@
+# V3 Backend API - Docker Compose
+#
+# Core services for the V3 CTI platform
+# Usage: docker compose up -d
+#
+# Profiles:
+#   - default: postgres, pgbouncer, redis-cache, redis-queue, opensearch, neo4j, searxng, exporters
+#   - full: adds minio, rabbitmq
+#   - platform: adds n8n, keycloak, vault, meilisearch
+#   - telemetry: adds prometheus, grafana, loki, tempo, promtail
+#   - gateway: adds traefik reverse proxy
+
+services:
+  # ============================================================================
+  # PostgreSQL - Primary Database
+  # ============================================================================
+  v3-postgres:
+    container_name: v3-postgres
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-rinjani_v3}
+    volumes:
+      - v3_pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # PgBouncer - Connection Pooling
+  # ============================================================================
+  v3-pgbouncer:
+    container_name: v3-pgbouncer
+    image: edoburu/pgbouncer:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@v3-postgres:5432/${POSTGRES_DB:-rinjani_v3}
+      POOL_MODE: transaction
+      DEFAULT_POOL_SIZE: 20
+      MAX_CLIENT_CONN: 200
+      MIN_POOL_SIZE: 5
+    volumes:
+      - ./config/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./config/pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+    ports:
+      - "6432:6432"
+    depends_on:
+      v3-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Redis Cache - Volatile (LRU eviction, no persistence)
+  # ============================================================================
+  v3-redis-cache:
+    container_name: v3-redis-cache
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save "" --appendonly no
+    ports:
+      - "6381:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Redis Queue - Persistent (AOF for BullMQ durability)
+  # ============================================================================
+  v3-redis-queue:
+    container_name: v3-redis-queue
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --appendfsync everysec
+    volumes:
+      - v3_redis_queue:/data
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # OpenSearch - Vector Search & Analytics
+  # ============================================================================
+  v3-opensearch:
+    container_name: v3-opensearch
+    image: opensearchproject/opensearch:2.18.0
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - bootstrap.memory_lock=true
+      - OPENSEARCH_JAVA_OPTS=-Xms1G -Xmx1G
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_PASSWORD:-Admin123!@#}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - v3_osdata:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -s http://localhost:9200 | grep -q 'cluster_name'" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ============================================================================
+  # Neo4j - Graph Database for CTI Relationship Exploration
+  # ============================================================================
+  v3-neo4j:
+    container_name: v3-neo4j
+    image: neo4j:5-community
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-rinjani1}
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_server_memory_pagecache_size: 512m
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+    volumes:
+      - v3_neo4j:/data
+    ports:
+      - "7474:7474" # Browser UI
+      - "7687:7687" # Bolt protocol
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ============================================================================
+  # MinIO - Object Storage (for file attachments)
+  # Profile: full
+  # ============================================================================
+  v3-minio:
+    profiles: [ "full" ]
+    container_name: v3-minio
+    image: minio/minio:latest
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-minioadmin}
+    command: server /data --console-address ":9001"
+    volumes:
+      - v3_minio:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # ============================================================================
+  # RabbitMQ - Advanced Message Queue (optional)
+  # Profile: full
+  # ============================================================================
+  v3-rabbitmq:
+    profiles: [ "full" ]
+    container_name: v3-rabbitmq
+    image: rabbitmq:3-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin}
+    volumes:
+      - v3_rabbitmq:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  # ============================================================================
+  # n8n - Visual Workflow Automation (SOAR)
+  # Profile: platform
+  # ============================================================================
+  v3-n8n:
+    profiles: [ "platform" ]
+    container_name: v3-n8n
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    environment:
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:-rinjani1}
+      N8N_HOST: 0.0.0.0
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://v3-n8n:5678/
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: v3-postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB:-rinjani_v3}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-postgres}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      GENERIC_TIMEZONE: "Asia/Jakarta"
+    volumes:
+      - v3_n8n:/home/node/.n8n
+    ports:
+      - "5678:5678"
+    depends_on:
+      v3-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --spider -q http://localhost:5678/healthz || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ============================================================================
+  # Keycloak - Enterprise SSO / OIDC Provider
+  # Profile: platform
+  # ============================================================================
+  v3-keycloak:
+    profiles: [ "platform" ]
+    container_name: v3-keycloak
+    image: quay.io/keycloak/keycloak:26.0
+    restart: unless-stopped
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://v3-postgres:5432/${POSTGRES_DB:-rinjani_v3}
+      KC_DB_USERNAME: ${POSTGRES_USER:-postgres}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      KC_DB_SCHEMA: keycloak
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-rinjani1}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+    volumes:
+      - v3_keycloak:/opt/keycloak/data
+    ports:
+      - "8443:8080"
+    depends_on:
+      v3-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -sf http://localhost:8080/health/ready || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ============================================================================
+  # HashiCorp Vault - Secrets Management
+  # Profile: platform
+  # ============================================================================
+  v3-vault:
+    profiles: [ "platform" ]
+    container_name: v3-vault
+    image: hashicorp/vault:1.18
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_ROOT_TOKEN:-rinjani-dev-token}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_ADDR: http://127.0.0.1:8200
+      VAULT_API_ADDR: http://v3-vault:8200
+    volumes:
+      - v3_vault:/vault/data
+    ports:
+      - "8200:8200"
+    healthcheck:
+      test: [ "CMD", "vault", "status", "-address=http://127.0.0.1:8200" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  # ============================================================================
+  # Meilisearch - Typo-Tolerant Instant Search
+  # Profile: platform
+  # ============================================================================
+  v3-meilisearch:
+    profiles: [ "platform" ]
+    container_name: v3-meilisearch
+    image: getmeili/meilisearch:v1.12
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-rinjani-meili-dev-key}
+      MEILI_ENV: development
+      MEILI_DB_PATH: /meili_data
+      MEILI_LOG_LEVEL: INFO
+    volumes:
+      - v3_meilisearch:/meili_data
+    ports:
+      - "7700:7700"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:7700/health" ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Traefik - Reverse Proxy & API Gateway
+  # Profile: gateway
+  # ============================================================================
+  v3-traefik:
+    profiles: [ "gateway" ]
+    container_name: v3-traefik
+    image: traefik:v3.2
+    restart: unless-stopped
+    command:
+      - "--configFile=/etc/traefik/traefik.yml"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config/traefik:/etc/traefik:ro
+      - v3_traefik_certs:/letsencrypt
+      - v3_traefik_logs:/var/log/traefik
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8888:8888" # Dev entrypoint
+      - "8082:8080" # Traefik dashboard
+    networks:
+      - default
+
+  # ============================================================================
+  # Redis Exporter - Native Redis Metrics
+  # ============================================================================
+  v3-redis-exporter:
+    container_name: v3-redis-exporter
+    image: oliver006/redis_exporter:v1.66.0
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: v3-redis-cache:6379,v3-redis-queue:6379
+    ports:
+      - "9121:9121"
+    depends_on:
+      v3-redis-cache:
+        condition: service_healthy
+      v3-redis-queue:
+        condition: service_healthy
+
+  # ============================================================================
+  # PostgreSQL Exporter - Native PG Metrics
+  # ============================================================================
+  v3-postgres-exporter:
+    container_name: v3-postgres-exporter
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@v3-postgres:5432/${POSTGRES_DB:-rinjani_v3}?sslmode=disable"
+    ports:
+      - "9187:9187"
+    depends_on:
+      v3-postgres:
+        condition: service_healthy
+
+  # ============================================================================
+  # OpenSearch Exporter - Cluster Metrics
+  # ============================================================================
+  v3-opensearch-exporter:
+    container_name: v3-opensearch-exporter
+    image: prometheuscommunity/elasticsearch-exporter:v1.8.0
+    restart: unless-stopped
+    command:
+      - "--es.uri=http://v3-opensearch:9200"
+      - "--es.all"
+    ports:
+      - "9114:9114"
+    depends_on:
+      v3-opensearch:
+        condition: service_healthy
+
+  # ============================================================================
+  # Prometheus - Metrics Collection
+  # Profile: telemetry
+  # ============================================================================
+  v3-prometheus:
+    profiles: [ "telemetry" ]
+    container_name: v3-prometheus
+    image: prom/prometheus:v2.54.0
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./config/prometheus:/etc/prometheus:ro
+      - v3_prometheus:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+
+  # ============================================================================
+  # Grafana - Dashboards & Visualization
+  # Profile: telemetry
+  # ============================================================================
+  v3-grafana:
+    profiles: [ "telemetry" ]
+    container_name: v3-grafana
+    image: grafana/grafana-oss:11.3.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-rinjani1}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - v3_grafana:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/etc/grafana/dashboards:ro
+    ports:
+      - "3002:3000"
+
+  # ============================================================================
+  # Loki - Log Aggregation
+  # Profile: telemetry
+  # ============================================================================
+  v3-loki:
+    profiles: [ "telemetry" ]
+    container_name: v3-loki
+    image: grafana/loki:3.3.0
+    restart: unless-stopped
+    volumes:
+      - v3_loki:/loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+
+  # ============================================================================
+  # Tempo - Distributed Tracing (replaces Jaeger)
+  # Profile: telemetry
+  # ============================================================================
+  v3-tempo:
+    profiles: [ "telemetry" ]
+    container_name: v3-tempo
+    image: grafana/tempo:2.6.0
+    restart: unless-stopped
+    volumes:
+      - v3_tempo:/var/tempo
+      - ./config/tempo:/etc/tempo:ro
+    ports:
+      - "4318:4318" # OTLP HTTP
+      - "4317:4317" # OTLP gRPC
+      - "3200:3200" # Tempo query
+    command: [ "-config.file=/etc/tempo/tempo.yaml" ]
+
+  # ============================================================================
+  # Promtail - Log Collector → Loki
+  # Profile: telemetry
+  # ============================================================================
+  v3-promtail:
+    profiles: [ "telemetry" ]
+    container_name: v3-promtail
+    image: grafana/promtail:3.3.0
+    restart: unless-stopped
+    volumes:
+      - ./config/promtail:/etc/promtail:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/promtail.yml
+    depends_on:
+      - v3-loki
+
+  # ============================================================================
+  # SearXNG - Self-Hosted Metasearch Engine (Free Web Search)
+  # ============================================================================
+  v3-searxng:
+    container_name: v3-searxng
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    volumes:
+      - ./config/searxng:/etc/searxng
+    ports:
+      - "8080:8080"
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ============================================================================
+  # API Server
+  # ============================================================================
+  v3-api:
+    container_name: v3-api
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@v3-pgbouncer:6432/${POSTGRES_DB:-rinjani_v3}
+      - REDIS_CACHE_URL=redis://v3-redis-cache:6379
+      - REDIS_QUEUE_URL=redis://v3-redis-queue:6379
+      - OPENSEARCH_URL=http://v3-opensearch:9200
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - NEO4J_URI=bolt://v3-neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-rinjani1}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://v3-tempo:4318
+      - OTEL_SERVICE_NAME=rinjani-api
+      - SEARXNG_URL=http://v3-searxng:8080
+      - API_KEYS=${API_KEYS:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # ── Enrichment API Keys ──
+      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
+      - VIRUSTOTAL_LIVEHUNT_API_KEY=${VIRUSTOTAL_LIVEHUNT_API_KEY:-}
+      - ABUSECH_API_KEY=${ABUSECH_API_KEY:-}
+      - RISKIQ_USER=${RISKIQ_USER:-}
+      - RISKIQ_API_KEY=${RISKIQ_API_KEY:-}
+      - RISKIQ_BASE_URL=${RISKIQ_BASE_URL:-https://api.riskiq.net/pt/v2}
+      - GOOGLE_SAFE_BROWSING_API_KEY=${GOOGLE_SAFE_BROWSING_API_KEY:-}
+      - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
+      - SHODAN_API_KEY=${SHODAN_API_KEY:-}
+      - IPINFO_API_KEY=${IPINFO_API_KEY:-}
+      - ZOOMEYE_API_KEY=${ZOOMEYE_API_KEY:-}
+    depends_on:
+      v3-pgbouncer:
+        condition: service_healthy
+      v3-redis-cache:
+        condition: service_healthy
+      v3-redis-queue:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================================================
+  # Background Job Worker
+  # ============================================================================
+  v3-worker:
+    container_name: v3-worker
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: [ "./apps/api/node_modules/.bin/tsx", "apps/worker/src/index.ts", "--daemon" ]
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@v3-pgbouncer:6432/${POSTGRES_DB:-rinjani_v3}
+      - REDIS_CACHE_URL=redis://v3-redis-cache:6379
+      - REDIS_QUEUE_URL=redis://v3-redis-queue:6379
+      - OPENSEARCH_URL=http://v3-opensearch:9200
+      - NEO4J_URI=bolt://v3-neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-rinjani1}
+      - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-5}
+      - ENABLE_FEED_SYNC=${ENABLE_FEED_SYNC:-true}
+      - SYNC_INTERVAL=${SYNC_INTERVAL:-3600000}
+      - SEARXNG_URL=http://v3-searxng:8080
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://v3-tempo:4318
+      - OTEL_SERVICE_NAME=rinjani-worker
+      - NODE_PATH=/app/apps/api/node_modules
+      # ── Enrichment API Keys ──
+      - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
+      - ABUSECH_API_KEY=${ABUSECH_API_KEY:-}
+      - RISKIQ_USER=${RISKIQ_USER:-}
+      - RISKIQ_API_KEY=${RISKIQ_API_KEY:-}
+      - GOOGLE_SAFE_BROWSING_API_KEY=${GOOGLE_SAFE_BROWSING_API_KEY:-}
+      - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
+      - SHODAN_API_KEY=${SHODAN_API_KEY:-}
+      - IPINFO_API_KEY=${IPINFO_API_KEY:-}
+    depends_on:
+      v3-pgbouncer:
+        condition: service_healthy
+      v3-redis-cache:
+        condition: service_healthy
+      v3-redis-queue:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "test -f /proc/1/cmdline && cat /proc/1/cmdline | tr '\\0' ' ' | grep -q 'worker' || exit 1" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+  # ============================================================================
+  # Dashboard (Next.js) — v302 standalone build
+  # Start with:  docker compose --profile dashboard up -d v3-dashboard
+  # ============================================================================
+  v3-dashboard:
+    container_name: v3-dashboard
+    profiles: [ "dashboard" ]
+    build:
+      context: ../v302-api-dashboard-rinjani/dashboard
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://v3-api:3001
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - API_KEY=${API_KEYS:-}
+    depends_on:
+      v3-api:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/" ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+  # ============================================================================
+  # Volumes
+  # ============================================================================
+volumes:
+  v3_pgdata:
+    driver: local
+  v3_redis_queue:
+    driver: local
+  v3_osdata:
+    driver: local
+  v3_neo4j:
+    driver: local
+  v3_minio:
+    driver: local
+  v3_rabbitmq:
+    driver: local
+  v3_traefik_certs:
+    driver: local
+  v3_traefik_logs:
+    driver: local
+  v3_prometheus:
+    driver: local
+  v3_grafana:
+    driver: local
+  v3_loki:
+    driver: local
+  v3_tempo:
+    driver: local
+  v3_n8n:
+    driver: local
+  v3_keycloak:
+    driver: local
+  v3_vault:
+    driver: local
+  v3_meilisearch:
+    driver: local
+
+# ============================================================================
+# Networks (optional, uses default bridge)
+# ============================================================================
+networks:
+  default:
+    name: v3-network

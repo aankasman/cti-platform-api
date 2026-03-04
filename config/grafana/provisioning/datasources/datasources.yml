@@ -1,0 +1,37 @@
+# Grafana Datasource Provisioning — Rinjani CTI Platform
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://v3-prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: "15s"
+
+  - name: Tempo
+    type: tempo
+    access: proxy
+    url: http://v3-tempo:3200
+    editable: false
+    jsonData:
+      tracesToLogs:
+        datasourceUid: loki
+        filterByTraceID: true
+      serviceMap:
+        datasourceUid: prometheus
+
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://v3-loki:3100
+    editable: false
+    jsonData:
+      derivedFields:
+        - name: TraceID
+          datasourceUid: tempo
+          matcherRegex: '"traceId":"(\w+)"'
+          url: "$${__value.raw}"
