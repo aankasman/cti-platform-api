@@ -42,7 +42,9 @@ export const PROVIDER_CONFIGS: Record<Exclude<EmbeddingProviderName, 'local'>, E
     },
     gemini: {
         name: 'gemini',
-        model: 'text-embedding-004',
+        // gemini-embedding-001 is the current production model on the v1 API.
+        // (text-embedding-004 only exists on v1beta and returns 404 on v1.)
+        model: 'gemini-embedding-001',
         apiKeyEnv: 'GEMINI_API_KEY',
         maxBatchSize: 100,       // Gemini has smaller batch limits
     },
