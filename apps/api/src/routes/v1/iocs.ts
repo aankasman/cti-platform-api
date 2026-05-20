@@ -15,8 +15,9 @@ import { db, eq, sql } from '@rinjani/db';
 import { iocs } from '@rinjani/db/schema';
 import { requireAuth, requireRole } from '../../middleware/auth';
 import {
-    IOCUpdateSchema, IOCRevokeSchema, IOCExpireSchema, IOCVerdictSchema,
+    IOCCreateSchema, IOCUpdateSchema, IOCRevokeSchema, IOCExpireSchema, IOCVerdictSchema,
 } from '../../lib/schemas';
+import { ConflictError } from '../../lib/errors';
 
 const router = new Hono();
 
@@ -221,6 +222,57 @@ function parseIocId(raw: string): string {
 function mergeRawData(patch: Record<string, unknown>) {
     return sql`COALESCE(${iocs.rawData}, '{}'::jsonb) || ${patch}::jsonb`;
 }
+
+/** POST /v1/iocs — Create a single IOC manually.
+ *
+ *  Distinct from `POST /bulk/iocs` (bulk ingest). Returns 409 on duplicate
+ *  `value`. Analysts can create; admins can too.
+ */
+router.post('/iocs', requireAuth, requireRole('admin', 'analyst'), async (c) => {
+    const body = IOCCreateSchema.parse(await c.req.json().catch(() => ({})));
+    const userId = c.get('user')?.id || 'unknown';
+
+    const now = new Date();
+    const rawData = body.notes
+        ? { notes: body.notes, createdBy: userId }
+        : { createdBy: userId };
+
+    try {
+        const [row] = await db.insert(iocs).values({
+            type: body.type,
+            value: body.value,
+            source: body.source,
+            severity: body.severity ?? null,
+            confidence: body.confidence ?? null,
+            tags: body.tags ?? null,
+            threatType: body.threatType ?? null,
+            firstSeen: now,
+            lastSeen: now,
+            rawData,
+        }).returning({
+            id: iocs.id,
+            type: iocs.type,
+            value: iocs.value,
+            source: iocs.source,
+            severity: iocs.severity,
+            confidence: iocs.confidence,
+            tags: iocs.tags,
+            threatType: iocs.threatType,
+            firstSeen: iocs.firstSeen,
+            lastSeen: iocs.lastSeen,
+            createdAt: iocs.createdAt,
+        });
+
+        return c.json({ success: true, data: row }, 201);
+    } catch (err) {
+        // Drizzle / postgres-js surfaces unique-violation as code 23505.
+        const e = err as { code?: string; message?: string };
+        if (e.code === '23505' || (e.message ?? '').includes('duplicate key')) {
+            throw new ConflictError(`IOC with value "${body.value}" already exists`);
+        }
+        throw err;
+    }
+});
 
 /** PUT /v1/iocs/:id — Partial update of IOC fields */
 router.put('/iocs/:id', requireAuth, requireRole('admin', 'analyst'), async (c) => {
