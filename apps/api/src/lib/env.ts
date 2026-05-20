@@ -38,7 +38,7 @@ const EnvSchema = z.object({
     NEO4J_PASSWORD: z.string().optional(),
     OPENSEARCH_URL: z.string().optional(),
     EXA_API_KEY: z.string().optional(),
-    JWT_SECRET: z.string().default('rinjani-dev-secret-change-me'),
+    JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
 });
 
 type Env = z.infer<typeof EnvSchema>;
