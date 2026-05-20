@@ -40,74 +40,23 @@ import { setupScheduledJobs } from '../../api/src/queues/scheduler.js';
 import { shutdownRedis } from '../../api/src/services/redis.js';
 
 // ============================================================================
-// Feed Sync (existing daemon)
+// Feed Sync — Full 10-Feed Orchestrator
 // ============================================================================
 
-import { syncCISA } from './feeds/cisa.js';
-import { syncAlienVault } from './feeds/alienvault.js';
-import { syncMITRE } from './feeds/mitre.js';
+import { feeds, runAllFeeds, type FeedName } from './feeds/index.js';
 
-const SYNC_INTERVAL = parseInt(process.env.SYNC_INTERVAL || '3600000'); // 1 hour default
+
 const ENABLE_FEED_SYNC = process.env.ENABLE_FEED_SYNC !== 'false'; // enabled by default
 
-// ============================================================================
-// Feed Sync Functions
-// ============================================================================
-
-async function runAllFeeds() {
-    console.log('\n[Worker] Starting feed sync cycle...\n');
-
-    const results = {
-        cisa: { success: false, processed: 0, errors: [] as string[] },
-        alienvault: { success: false, processed: 0, errors: [] as string[] },
-        mitre: { success: false, processed: 0, errors: [] as string[] },
-    };
-
-    try {
-        console.log('[CISA] Starting sync...');
-        const cisaResult = await syncCISA();
-        results.cisa.success = cisaResult.failed === 0 && cisaResult.processed > 0;
-        results.cisa.processed = cisaResult.processed;
-        console.log(`[CISA] ✅ Synced ${cisaResult.processed} vulnerabilities`);
-    } catch (error) {
-        results.cisa.errors.push((error as Error).message);
-        console.error('[CISA] ❌ Sync failed:', error);
-    }
-
-    try {
-        console.log('[AlienVault] Starting sync...');
-        const otxResult = await syncAlienVault();
-        results.alienvault.success = otxResult.failed === 0 && otxResult.processed > 0;
-        results.alienvault.processed = otxResult.processed;
-        console.log(`[AlienVault] ✅ Synced ${otxResult.processed} indicators`);
-    } catch (error) {
-        results.alienvault.errors.push((error as Error).message);
-        console.error('[AlienVault] ❌ Sync failed:', error);
-    }
-
-    try {
-        console.log('[MITRE] Starting sync...');
-        const mitreResult = await syncMITRE();
-        results.mitre.success = mitreResult.failed === 0 && mitreResult.processed > 0;
-        results.mitre.processed = mitreResult.processed;
-        console.log(`[MITRE] ✅ Synced ${mitreResult.processed} techniques`);
-    } catch (error) {
-        results.mitre.errors.push((error as Error).message);
-        console.error('[MITRE] ❌ Sync failed:', error);
-    }
-
-    const totalProcessed = results.cisa.processed + results.alienvault.processed + results.mitre.processed;
-    const successCount = [results.cisa.success, results.alienvault.success, results.mitre.success].filter(Boolean).length;
-    console.log(`\n[Worker] Sync cycle complete: ${successCount}/3 feeds successful, ${totalProcessed} total items\n`);
-
-    return results;
-}
+const FEED_NAMES = Object.keys(feeds) as FeedName[];
+const FEED_COUNT = FEED_NAMES.length;
 
 // ============================================================================
 // Main — Boot Everything
 // ============================================================================
 
 async function main() {
+    const feedList = FEED_NAMES.map(k => `${feeds[k].name} (${feeds[k].interval / 60000}min)`).join(', ');
     console.log(`
 ╔═══════════════════════════════════════════════════════════╗
 ║         V3 Worker Process (Standalone)                    ║
@@ -115,10 +64,12 @@ async function main() {
 ║  BullMQ Workers:  10 (feed-sync, enrichment, AI, Neo4j,  ║
 ║                   nexus, CVE, notifications, alerts,      ║
 ║                   retention, web-search)                   ║
-║  Feed Sync:       ${ENABLE_FEED_SYNC ? 'Enabled' : 'Disabled'} (interval: ${(SYNC_INTERVAL / 1000 / 60).toFixed(0)}min)${' '.repeat(Math.max(0, 18 - (ENABLE_FEED_SYNC ? 'Enabled' : 'Disabled').length - (SYNC_INTERVAL / 1000 / 60).toFixed(0).length))}║
+║  Feed Sync:       ${ENABLE_FEED_SYNC ? 'Enabled' : 'Disabled'} (${FEED_COUNT} feeds)${' '.repeat(Math.max(0, 23 - (ENABLE_FEED_SYNC ? 'Enabled' : 'Disabled').length - String(FEED_COUNT).length))}║
 ║  Scheduled Jobs:  cron-based repeatable jobs              ║
 ╚═══════════════════════════════════════════════════════════╝
 `);
+
+    console.log(`[Worker] Feed registry: ${feedList}`);
 
     // 1. Start all BullMQ workers
     console.log('[Worker] Starting BullMQ workers...');
@@ -136,20 +87,28 @@ async function main() {
 
     // 3. Start feed sync daemon (if enabled)
     if (ENABLE_FEED_SYNC) {
-        console.log('[Worker] Starting feed sync daemon...');
-        // Initial sync on startup
+        console.log(`[Worker] Starting feed sync daemon with ${FEED_COUNT} feeds...`);
+
+        // Initial sync of all feeds on startup
         await runAllFeeds().catch(err => {
             console.error('[Worker] Initial feed sync failed:', err);
         });
 
-        // Then run on interval
-        setInterval(async () => {
-            await runAllFeeds().catch(err => {
-                console.error('[Worker] Feed sync cycle failed:', err);
-            });
-        }, SYNC_INTERVAL);
+        // Set up per-feed intervals (each feed runs on its own schedule)
+        for (const [key, feed] of Object.entries(feeds)) {
+            const intervalMin = (feed.interval / 60000).toFixed(0);
+            console.log(`[Worker] Scheduling ${feed.name} every ${intervalMin}min`);
+            setInterval(async () => {
+                console.log(`[Worker] Scheduled sync: ${feed.name}`);
+                try {
+                    await feed.sync();
+                } catch (error) {
+                    console.error(`[Worker] Feed sync failed: ${feed.name}`, error);
+                }
+            }, feed.interval);
+        }
 
-        console.log(`[Worker] ✅ Feed sync daemon running (next sync in ${(SYNC_INTERVAL / 1000 / 60).toFixed(0)} minutes)`);
+        console.log(`[Worker] ✅ Feed sync daemon running (${FEED_COUNT} feeds on independent intervals)`);
     } else {
         console.log('[Worker] ⏭️  Feed sync disabled (ENABLE_FEED_SYNC=false)');
     }

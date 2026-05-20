@@ -7,6 +7,7 @@
 
 import { Hono } from 'hono';
 import { getMetricsSnapshot } from '../../telemetry/otel';
+import { getCtiPrometheusMetrics } from '../../telemetry/cti-counters';
 import { createLogger } from '../../lib/logger';
 
 const log = createLogger('Prometheus');
@@ -41,29 +42,49 @@ router.get('/metrics/prometheus', async (c) => {
     sections.push(metric('rinjani_http_active_connections', 'gauge', 'Current active connections', snapshot.activeConnections));
 
     // ========================================================================
-    // Database Entity Counts
+    // Database Entity Counts (full CTI inventory)
     // ========================================================================
-    let dbStats = { totalActors: 0, totalVulns: 0, totalIOCs: 0 };
+    let dbStats: Record<string, number> = {};
     try {
         const { db, sql } = await import('@rinjani/db');
-        const { threatActors, vulnerabilities, iocs } = await import('@rinjani/db/schema');
+        const { threatActors, vulnerabilities, iocs, malware, galaxyClusters, detectionRules } = await import('@rinjani/db/schema');
 
         const [actorCount] = await db.select({ count: sql<number>`count(*)` }).from(threatActors);
         const [vulnCount] = await db.select({ count: sql<number>`count(*)` }).from(vulnerabilities);
         const [iocCount] = await db.select({ count: sql<number>`count(*)` }).from(iocs);
+        const [malwareCount] = await db.select({ count: sql<number>`count(*)` }).from(malware);
+        const [galaxyCount] = await db.select({ count: sql<number>`count(*)` }).from(galaxyClusters);
+        const [sigmaCount] = await db.select({ count: sql<number>`count(*)` }).from(detectionRules);
+
+        // Relationships via raw query
+        const relResult = await db.execute(sql`SELECT count(*) AS cnt FROM relationships`);
+        const relCount = Number((relResult as unknown as Record<string, unknown>[])?.[0]?.cnt || 0);
 
         dbStats = {
-            totalActors: Number(actorCount?.count || 0),
-            totalVulns: Number(vulnCount?.count || 0),
-            totalIOCs: Number(iocCount?.count || 0),
+            actors: Number(actorCount?.count || 0),
+            vulns: Number(vulnCount?.count || 0),
+            iocs: Number(iocCount?.count || 0),
+            malware: Number(malwareCount?.count || 0),
+            galaxy_clusters: Number(galaxyCount?.count || 0),
+            detection_rules: Number(sigmaCount?.count || 0),
+            relationships: relCount,
         };
     } catch (err) {
         log.warn('Failed to get DB stats for Prometheus', { error: (err as Error).message });
     }
 
-    sections.push(metric('rinjani_threat_actors_total', 'gauge', 'Total threat actors in database', dbStats.totalActors));
-    sections.push(metric('rinjani_vulnerabilities_total', 'gauge', 'Total vulnerabilities in database', dbStats.totalVulns));
-    sections.push(metric('rinjani_iocs_total', 'gauge', 'Total IOCs in database', dbStats.totalIOCs));
+    sections.push(metric('rinjani_threat_actors_total', 'gauge', 'Total threat actors in database', dbStats.actors || 0));
+    sections.push(metric('rinjani_vulnerabilities_total', 'gauge', 'Total vulnerabilities in database', dbStats.vulns || 0));
+    sections.push(metric('rinjani_iocs_total', 'gauge', 'Total IOCs in database', dbStats.iocs || 0));
+    sections.push(metric('rinjani_malware_total', 'gauge', 'Total malware entries in database', dbStats.malware || 0));
+    sections.push(metric('rinjani_galaxy_clusters_total', 'gauge', 'Total MISP galaxy clusters in database', dbStats.galaxy_clusters || 0));
+    sections.push(metric('rinjani_detection_rules_total', 'gauge', 'Total detection/sigma rules in database', dbStats.detection_rules || 0));
+    sections.push(metric('rinjani_relationships_total', 'gauge', 'Total STIX relationships in database', dbStats.relationships || 0));
+
+    // ========================================================================
+    // CTI Ingestion Counters (in-memory)
+    // ========================================================================
+    sections.push(getCtiPrometheusMetrics());
 
     // ========================================================================
     // Enrichment Queue

@@ -25,22 +25,11 @@ const ensureOnce = (() => {
     let done = false;
     return async () => {
         if (done) return;
+        // The `relationships` table is created by the MITRE sync schema.
+        // Just ensure indexes exist for the entity_relationships queries.
         await rawQuery(sql.raw(`
-            CREATE TABLE IF NOT EXISTS entity_relationships (
-                id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-                source_type TEXT NOT NULL,
-                source_id TEXT NOT NULL,
-                target_type TEXT NOT NULL,
-                target_id TEXT NOT NULL,
-                relationship_type TEXT NOT NULL,
-                confidence INT NOT NULL DEFAULT 70,
-                description TEXT,
-                created_by TEXT,
-                created_at TIMESTAMPTZ DEFAULT NOW(),
-                UNIQUE(source_type, source_id, target_type, target_id, relationship_type)
-            );
-            CREATE INDEX IF NOT EXISTS idx_rel_source ON entity_relationships(source_type, source_id);
-            CREATE INDEX IF NOT EXISTS idx_rel_target ON entity_relationships(target_type, target_id);
+            CREATE INDEX IF NOT EXISTS idx_rel_source ON relationships(source_type, source_id);
+            CREATE INDEX IF NOT EXISTS idx_rel_target ON relationships(target_type, target_id);
         `));
         done = true;
     };
@@ -54,7 +43,7 @@ router.post('/relationships', requireRole('admin', 'analyst'), async (c) => {
     const body = CreateRelationshipSchema.parse(await c.req.json().catch(() => ({})));
     const userId = c.get('user')?.id || 'unknown';
     const result = await rawQuery(sql.raw(`
-        INSERT INTO entity_relationships (source_type, source_id, target_type, target_id, relationship_type, confidence, description, created_by)
+        INSERT INTO relationships (source_type, source_id, target_type, target_id, relationship_type, confidence, description, created_by)
         VALUES ('${esc(body.sourceType)}', '${esc(body.sourceId)}', '${esc(body.targetType)}', '${esc(body.targetId)}',
                 '${esc(body.relationshipType)}', ${body.confidence},
                 ${body.description ? `'${esc(body.description)}'` : 'NULL'}, '${esc(userId)}')
@@ -77,8 +66,8 @@ router.get('/relationships', async (c) => {
     const where = conds.join(' AND ');
     const offset = (page - 1) * pageSize;
     const [items, cnt] = await Promise.all([
-        rawQuery(sql.raw(`SELECT * FROM entity_relationships WHERE ${where} ORDER BY created_at DESC LIMIT ${pageSize} OFFSET ${offset}`)),
-        rawQuery(sql.raw(`SELECT COUNT(*) AS total FROM entity_relationships WHERE ${where}`)),
+        rawQuery(sql.raw(`SELECT * FROM relationships WHERE ${where} ORDER BY created_at DESC LIMIT ${pageSize} OFFSET ${offset}`)),
+        rawQuery(sql.raw(`SELECT COUNT(*) AS total FROM relationships WHERE ${where}`)),
     ]);
     const total = Number((cnt.rows?.[0] as Record<string, unknown>)?.total || 0);
     return c.json({ success: true, data: { items: items.rows || [], pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } } });
@@ -88,7 +77,7 @@ router.get('/relationships', async (c) => {
 router.get('/relationships/:id', async (c) => {
     await ensureOnce();
     const { id } = c.req.param();
-    const result = await rawQuery(sql.raw(`SELECT * FROM entity_relationships WHERE id = '${esc(id)}'`));
+    const result = await rawQuery(sql.raw(`SELECT * FROM relationships WHERE id = '${esc(id)}'`));
     if (!result.rows?.[0]) throw new NotFoundError('Relationship', id);
     return c.json({ success: true, data: result.rows[0] });
 });
@@ -97,7 +86,7 @@ router.get('/relationships/:id', async (c) => {
 router.delete('/relationships/:id', requireRole('admin', 'analyst'), async (c) => {
     await ensureOnce();
     const { id } = c.req.param();
-    const result = await rawQuery(sql.raw(`DELETE FROM entity_relationships WHERE id = '${esc(id)}' RETURNING id`));
+    const result = await rawQuery(sql.raw(`DELETE FROM relationships WHERE id = '${esc(id)}' RETURNING id`));
     if (!result.rows?.[0]) throw new NotFoundError('Relationship', id);
     return c.json({ success: true, data: { id, deleted: true } });
 });
@@ -107,7 +96,7 @@ router.get('/entities/:id/relationships', async (c) => {
     await ensureOnce();
     const { id } = c.req.param();
     const result = await rawQuery(sql.raw(`
-        SELECT * FROM entity_relationships
+        SELECT * FROM relationships
         WHERE source_id = '${esc(id)}' OR target_id = '${esc(id)}'
         ORDER BY created_at DESC LIMIT 100
     `));
@@ -132,7 +121,7 @@ router.post('/relationships/bulk', requireRole('admin', 'analyst'), async (c) =>
     for (const rel of body.relationships) {
         try {
             await rawQuery(sql.raw(`
-                INSERT INTO entity_relationships (source_type, source_id, target_type, target_id, relationship_type, confidence, description, created_by)
+                INSERT INTO relationships (source_type, source_id, target_type, target_id, relationship_type, confidence, description, created_by)
                 VALUES ('${esc(rel.sourceType)}', '${esc(rel.sourceId)}', '${esc(rel.targetType)}', '${esc(rel.targetId)}',
                         '${esc(rel.relationshipType)}', ${rel.confidence},
                         ${rel.description ? `'${esc(rel.description)}'` : 'NULL'}, '${esc(userId)}')

@@ -8,6 +8,7 @@
 import { db } from '@rinjani/db';
 import { vulnerabilities, syncLogs } from '@rinjani/db/schema';
 import { eq } from '@rinjani/db';
+import { getLastSyncCursor } from './delta-sync.js';
 
 // =============================================================================
 // Configuration
@@ -59,11 +60,12 @@ function mapSeverity(ransomwareUse: string): string {
     return 'high'; // All KEV entries are at least high severity
 }
 
-export async function syncCISA(): Promise<SyncResult> {
+export async function syncCISA(): Promise<SyncResult & { catalogVersion?: string }> {
     console.log('[CISA KEV] Starting sync...');
     console.log(`[CISA KEV] Catalog URL: ${CISA_CATALOG_URL}`);
 
     const result: SyncResult = { processed: 0, failed: 0, errors: [] };
+    let catalogVersion: string | undefined;
 
     try {
         const response = await fetch(CISA_CATALOG_URL, {
@@ -75,7 +77,16 @@ export async function syncCISA(): Promise<SyncResult> {
         }
 
         const catalog: CISACatalog = await response.json() as CISACatalog;
+        catalogVersion = catalog.catalogVersion;
         console.log(`[CISA KEV] Catalog version: ${catalog.catalogVersion}, ${catalog.count} vulnerabilities`);
+
+        // Delta check: skip if catalog version is unchanged since last sync
+        const lastCursor = await getLastSyncCursor('cisa_kev');
+        if (lastCursor && lastCursor === catalog.catalogVersion) {
+            console.log(`[CISA KEV] Catalog unchanged (version ${catalog.catalogVersion}) — skipping sync`);
+            return { processed: 0, failed: 0, errors: [], catalogVersion };
+        }
+        console.log(`[CISA KEV] Catalog updated: ${lastCursor || 'first run'} → ${catalog.catalogVersion}`);
 
         for (const vuln of catalog.vulnerabilities) {
             try {
@@ -118,16 +129,17 @@ export async function syncCISA(): Promise<SyncResult> {
     }
 
     console.log(`[CISA KEV] Sync completed: ${result.processed} CVEs, ${result.failed} failed`);
-    return result;
+    return { ...result, catalogVersion };
 }
 
 // Log sync results
-async function logSync(result: SyncResult, startedAt: Date): Promise<void> {
+async function logSync(result: SyncResult, startedAt: Date, catalogVersion?: string): Promise<void> {
     await db.insert(syncLogs).values({
         entityType: 'cisa_kev',
         status: result.failed === 0 ? 'success' : 'partial',
         itemsProcessed: result.processed,
         itemsFailed: result.failed,
+        lastSyncCursor: catalogVersion || null,
         errorMessage: result.errors.length > 0 ? result.errors.slice(0, 5).join('\n') : null,
         startedAt,
         completedAt: new Date(),
@@ -137,12 +149,12 @@ async function logSync(result: SyncResult, startedAt: Date): Promise<void> {
 // Main runner
 export async function runCISASync(): Promise<void> {
     const startedAt = new Date();
-    console.log('[CISA KEV] Starting full sync...');
+    console.log('[CISA KEV] Starting sync...');
 
     try {
         const result = await syncCISA();
-        await logSync(result, startedAt);
-        console.log('[CISA KEV] Full sync completed!');
+        await logSync(result, startedAt, result.catalogVersion);
+        console.log('[CISA KEV] Sync completed!');
     } catch (error) {
         console.error('[CISA KEV] Sync failed:', error);
         await logSync({ processed: 0, failed: 1, errors: [(error as Error).message] }, startedAt);

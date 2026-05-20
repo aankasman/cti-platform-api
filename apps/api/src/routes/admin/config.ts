@@ -153,7 +153,7 @@ router.delete('/config/services/:id', requireAuth, requireRole('admin'), async (
 // ============================================================================
 
 router.get('/config/settings', requireAuth, requireRole('admin'), async (c) => {
-    // Return commonly-needed settings
+    // Config-store keys
     const keys = [
         'LOG_LEVEL', 'FEED_SYNC_ENABLED', 'ENRICHMENT_ENABLED',
         'AI_ANALYSIS_ENABLED', 'NEO4J_SYNC_ENABLED', 'RATE_LIMIT_WINDOW',
@@ -164,6 +164,18 @@ router.get('/config/settings', requireAuth, requireRole('admin'), async (c) => {
     const settings: Record<string, string | null> = {};
     for (const key of keys) {
         settings[key] = await getConfig(key);
+    }
+
+    // Also expose AI/LLM env vars (masked) so the dashboard can show provider status
+    const aiEnvKeys = [
+        'GOOGLE_API_KEY', 'GEMINI_API_KEY', 'OPENROUTER_API_KEY',
+        'OPENAI_API_KEY', 'ANTHROPIC_API_KEY',
+        'OLLAMA_URL', 'OLLAMA_MODEL',
+        'AI_DEFAULT_MODEL',
+    ];
+    for (const key of aiEnvKeys) {
+        const val = process.env[key];
+        settings[key] = val ? `${val.slice(0, 4)}••••${val.slice(-4)}` : null;
     }
 
     return c.json({ success: true, data: settings });

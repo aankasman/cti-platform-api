@@ -180,3 +180,62 @@ groups:
           summary: "API response time exceeds 500ms"
           description: "Average response time is {{ $value }}ms (threshold: 500ms)."
 
+  # ============================================================================
+  # CTI-Specific Alerts
+  # ============================================================================
+  - name: rinjani-cti
+    rules:
+      # IOC count decreased — potential data loss
+      - alert: RinjaniIOCCountDrop
+        expr: delta(rinjani_iocs_total[1h]) < -100
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "IOC count decreased by {{ $value }}"
+          description: "IOC total dropped by more than 100 in the last hour. Possible data loss or purge."
+
+      # No new IOCs ingested for 6 hours
+      - alert: RinjaniNoNewIOCs
+        expr: delta(rinjani_iocs_total[6h]) == 0
+        for: 30m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "No new IOCs ingested in 6+ hours"
+          description: "The IOC total has not increased in the last 6 hours. Feed syncs may be stalled."
+
+      # Feed sync stale — no sync activity for 2 hours
+      - alert: RinjaniFeedSyncStale
+        expr: absent_over_time(rinjani_feed_sync_total[2h])
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "No feed sync activity detected"
+          description: "No feed sync metrics observed in the last 2 hours. Worker may be down."
+
+      # Vulnerability count drop
+      - alert: RinjaniVulnCountDrop
+        expr: delta(rinjani_vulnerabilities_total[1h]) < -50
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Vulnerability count decreased by {{ $value }}"
+          description: "Vulnerability total dropped by more than 50 in the last hour."
+
+      # Process memory high (API using > 512MB RSS)
+      - alert: RinjaniHighMemory
+        expr: rinjani_process_memory_rss_bytes > 536870912
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "API process memory exceeds 512MB"
+          description: "RSS memory is {{ $value | humanize1024 }}. Consider investigating memory leaks."

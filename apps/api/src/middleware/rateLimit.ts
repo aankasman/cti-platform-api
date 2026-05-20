@@ -41,7 +41,7 @@ const ROLE_LIMITS: Record<string, RateLimitConfig> = {
 
 // Endpoint-specific overrides (stricter limits for expensive operations)
 const ENDPOINT_LIMITS: Record<string, RateLimitConfig> = {
-    '/v2/ai': { maxRequests: 10, windowSeconds: 60 },
+    '/v2/ai': { maxRequests: 30, windowSeconds: 60 },
     '/v2/bulk': { maxRequests: 5, windowSeconds: 60 },
     '/v1/graph/layout': { maxRequests: 60, windowSeconds: 60 },
     '/v2/search': { maxRequests: 50, windowSeconds: 60 },

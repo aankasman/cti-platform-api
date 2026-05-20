@@ -12,6 +12,7 @@ import enrichmentRoutes from './ops/enrichment';
 import workerRoutes from './ops/workers';
 import embeddingRoutes from './ops/embedding';
 import prometheusRoutes from './ops/prometheus';
+import sparklineRoutes from './ops/sparkline';
 
 export const opsRouter = new Hono();
 
@@ -32,5 +33,8 @@ opsRouter.route('/', embeddingRoutes);
 
 // Prometheus scrape endpoint
 opsRouter.route('/', prometheusRoutes);
+
+// Sparkline data (Prometheus + PG fallback)
+opsRouter.route('/', sparklineRoutes);
 
 export default opsRouter;

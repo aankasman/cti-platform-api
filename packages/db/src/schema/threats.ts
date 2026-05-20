@@ -97,6 +97,57 @@ export const malware = pgTable('malware', {
 }));
 
 // ============================================================================
+// Galaxy Clusters (generic MISP Galaxy data — tools, exploit-kits, sectors, etc.)
+// ============================================================================
+
+export const galaxyClusters = pgTable('galaxy_clusters', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    galaxyType: varchar('galaxy_type', { length: 100 }).notNull(), // tool, exploit-kit, ransomware, sector, country, etc.
+    uuid: varchar('uuid', { length: 255 }).notNull().unique(),      // MISP Galaxy UUID
+    name: varchar('name', { length: 500 }).notNull(),
+    description: text('description'),
+    aliases: jsonb('aliases').$type<string[]>().default([]),
+    meta: jsonb('meta').$type<Record<string, unknown>>().default({}), // All MISP meta fields
+    labels: jsonb('labels').$type<string[]>().default([]),
+    externalReferences: jsonb('external_references').$type<string[]>().default([]),
+    source: varchar('source', { length: 100 }).default('misp-galaxy'),
+    syncedAt: timestamp('synced_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+    galaxyTypeIdx: index('galaxy_clusters_type_idx').on(table.galaxyType),
+    uuidIdx: index('galaxy_clusters_uuid_idx').on(table.uuid),
+    nameIdx: index('galaxy_clusters_name_idx').on(table.name),
+}));
+
+// ============================================================================
+// Detection Rules (Sigma rules from MISP Galaxy)
+// ============================================================================
+
+export const detectionRules = pgTable('detection_rules', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ruleType: varchar('rule_type', { length: 50 }).notNull().default('sigma'), // sigma, yara, snort, etc.
+    uuid: varchar('uuid', { length: 255 }).notNull().unique(),
+    name: varchar('name', { length: 1000 }).notNull(),
+    description: text('description'),
+    severity: varchar('severity', { length: 20 }),          // critical, high, medium, low, informational
+    status: varchar('status', { length: 20 }),               // stable, test, experimental, deprecated
+    tags: jsonb('tags').$type<string[]>().default([]),        // MITRE ATT&CK tags, etc.
+    detection: jsonb('detection').$type<Record<string, unknown>>().default({}), // Sigma detection logic
+    meta: jsonb('meta').$type<Record<string, unknown>>().default({}),           // Full MISP meta
+    externalReferences: jsonb('external_references').$type<string[]>().default([]),
+    source: varchar('source', { length: 100 }).default('misp-galaxy'),
+    syncedAt: timestamp('synced_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+    ruleTypeIdx: index('detection_rules_type_idx').on(table.ruleType),
+    uuidIdx: index('detection_rules_uuid_idx').on(table.uuid),
+    nameIdx: index('detection_rules_name_idx').on(table.name),
+    severityIdx: index('detection_rules_severity_idx').on(table.severity),
+}));
+
+// ============================================================================
 // Sync Log (for tracking Rinjani sync status)
 // ============================================================================
 

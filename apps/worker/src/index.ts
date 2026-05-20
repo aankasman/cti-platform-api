@@ -1,11 +1,9 @@
 /**
  * V3 Worker Entry Point - Standalone Mode
- * 
- * Runs intel feed workers independently.
- * Syncs directly from public threat intel sources:
- * - CISA KEV (Known Exploited Vulnerabilities)
- * - AlienVault OTX (Open Threat Exchange)
- * - MITRE ATT&CK (Tactics, Techniques, Procedures)
+ *
+ * Runs all intel feed workers independently.
+ * Syncs directly from public threat intel sources using the
+ * full 10-feed orchestrator with per-feed intervals.
  */
 
 // Load environment variables from project root .env file
@@ -20,94 +18,47 @@ config({ path: join(projectRoot, '.env') });
 
 console.log('[Worker] Loaded DATABASE_URL:', process.env.DATABASE_URL ? '✅ Set' : '❌ Missing');
 
-import { syncCISA } from './feeds/cisa.js';
-import { syncAlienVault } from './feeds/alienvault.js';
-import { syncMITRE } from './feeds/mitre.js';
+import { feeds, runAllFeeds, type FeedName } from './feeds/index.js';
 
-const SYNC_INTERVAL = parseInt(process.env.SYNC_INTERVAL || '3600000'); // 1 hour default
+const FEED_NAMES = Object.keys(feeds) as FeedName[];
+const FEED_COUNT = FEED_NAMES.length;
 
+const feedList = FEED_NAMES.map(k => feeds[k].name).join(', ');
 console.log(`
 ╔═══════════════════════════════════════════════════════════╗
 ║         V3 Threat Intel Worker (Standalone)               ║
 ╠═══════════════════════════════════════════════════════════╣
-║  Mode:   Direct feed sync (standalone)                    ║
-║  Feeds:  CISA KEV, AlienVault OTX, MITRE ATT&CK           ║
-║  Interval: ${(SYNC_INTERVAL / 1000 / 60).toFixed(0)} minutes                                        ║
+║  Mode:   Full feed sync (${FEED_COUNT} feeds)${' '.repeat(Math.max(0, 28 - String(FEED_COUNT).length))}║
+║  Feeds:  ${feedList.slice(0, 49)}${' '.repeat(Math.max(0, 49 - feedList.slice(0, 49).length))}║
 ╚═══════════════════════════════════════════════════════════╝
 `);
 
-/**
- * Run all feed syncs
- */
-async function runAllFeeds() {
-    console.log('\n[Worker] Starting feed sync cycle...\n');
-
-    const results = {
-        cisa: { success: false, processed: 0, errors: [] as string[] },
-        alienvault: { success: false, processed: 0, errors: [] as string[] },
-        mitre: { success: false, processed: 0, errors: [] as string[] },
-    };
-
-    // CISA KEV Sync
-    try {
-        console.log('[CISA] Starting sync...');
-        const cisaResult = await syncCISA();
-        results.cisa.success = cisaResult.failed === 0 && cisaResult.processed > 0;
-        results.cisa.processed = cisaResult.processed;
-        console.log(`[CISA] ✅ Synced ${cisaResult.processed} vulnerabilities`);
-    } catch (error) {
-        results.cisa.errors.push((error as Error).message);
-        console.error('[CISA] ❌ Sync failed:', error);
-    }
-
-    // AlienVault OTX Sync
-    try {
-        console.log('[AlienVault] Starting sync...');
-        const otxResult = await syncAlienVault();
-        results.alienvault.success = otxResult.failed === 0 && otxResult.processed > 0;
-        results.alienvault.processed = otxResult.processed;
-        console.log(`[AlienVault] ✅ Synced ${otxResult.processed} indicators`);
-    } catch (error) {
-        results.alienvault.errors.push((error as Error).message);
-        console.error('[AlienVault] ❌ Sync failed:', error);
-    }
-
-    // MITRE ATT&CK Sync
-    try {
-        console.log('[MITRE] Starting sync...');
-        const mitreResult = await syncMITRE();
-        results.mitre.success = mitreResult.failed === 0 && mitreResult.processed > 0;
-        results.mitre.processed = mitreResult.processed;
-        console.log(`[MITRE] ✅ Synced ${mitreResult.processed} techniques`);
-    } catch (error) {
-        results.mitre.errors.push((error as Error).message);
-        console.error('[MITRE] ❌ Sync failed:', error);
-    }
-
-    // Summary
-    const totalProcessed = results.cisa.processed + results.alienvault.processed + results.mitre.processed;
-    const successCount = [results.cisa.success, results.alienvault.success, results.mitre.success].filter(Boolean).length;
-
-    console.log(`\n[Worker] Sync cycle complete: ${successCount}/3 feeds successful, ${totalProcessed} total items\n`);
-
-    return results;
-}
+console.log(`[Worker] Full feed list: ${feedList}`);
 
 /**
- * Start daemon mode
+ * Start daemon mode — runs all feeds initially, then each on its own interval
  */
 async function startDaemon() {
     console.log('[Worker] Starting daemon mode...\n');
 
-    // Run immediately on startup
+    // Run all feeds immediately on startup
     await runAllFeeds();
 
-    // Then run on interval
-    setInterval(async () => {
-        await runAllFeeds();
-    }, SYNC_INTERVAL);
+    // Set up per-feed intervals (each feed runs on its own schedule)
+    for (const [key, feed] of Object.entries(feeds)) {
+        const intervalMin = (feed.interval / 60000).toFixed(0);
+        console.log(`[Worker] Scheduling ${feed.name} every ${intervalMin}min`);
+        setInterval(async () => {
+            console.log(`[Worker] Scheduled sync: ${feed.name}`);
+            try {
+                await feed.sync();
+            } catch (error) {
+                console.error(`[Worker] Feed sync failed: ${feed.name}`, error);
+            }
+        }, feed.interval);
+    }
 
-    console.log(`[Worker] Daemon running. Next sync in ${(SYNC_INTERVAL / 1000 / 60).toFixed(0)} minutes.`);
+    console.log(`\n[Worker] Daemon running — ${FEED_COUNT} feeds on independent intervals.`);
 }
 
 /**

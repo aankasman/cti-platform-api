@@ -108,6 +108,12 @@ export async function runAllFeeds(): Promise<void> {
 
     const startTime = Date.now();
     const results: { name: string; success: boolean; duration: number }[] = [];
+    let telemetry: typeof import('../lib/telemetry').workerTelemetry | null = null;
+
+    try {
+        const mod = await import('../lib/telemetry');
+        telemetry = mod.workerTelemetry;
+    } catch { /* telemetry optional */ }
 
     for (const [key, feed] of Object.entries(feeds)) {
         const feedStart = Date.now();
@@ -115,10 +121,14 @@ export async function runAllFeeds(): Promise<void> {
 
         try {
             await feed.sync();
-            results.push({ name: feed.name, success: true, duration: Date.now() - feedStart });
+            const duration = Date.now() - feedStart;
+            results.push({ name: feed.name, success: true, duration });
+            telemetry?.recordSync(key, 0, duration, true);
         } catch (error) {
+            const duration = Date.now() - feedStart;
             log.error(`Feed failed: ${feed.name}`, error);
-            results.push({ name: feed.name, success: false, duration: Date.now() - feedStart });
+            results.push({ name: feed.name, success: false, duration });
+            telemetry?.recordSync(key, 0, duration, false);
         }
     }
 
@@ -153,45 +163,49 @@ export async function startFeedDaemon(): Promise<void> {
 }
 
 // =============================================================================
-// CLI Handler
+// CLI Handler — only runs when this file is the direct entry point
 // =============================================================================
 
-const command = process.argv[2];
+const isDirectEntry = process.argv[1]?.includes('feeds/index');
 
-if (command === 'all') {
-    runAllFeeds()
-        .then(() => process.exit(0))
-        .catch((error) => {
+if (isDirectEntry) {
+    const command = process.argv[2];
+
+    if (command === 'all') {
+        runAllFeeds()
+            .then(() => process.exit(0))
+            .catch((error) => {
+                console.error(error);
+                process.exit(1);
+            });
+    } else if (command === 'daemon') {
+        startFeedDaemon().catch((error) => {
             console.error(error);
             process.exit(1);
         });
-} else if (command === 'daemon') {
-    startFeedDaemon().catch((error) => {
-        console.error(error);
+    } else if (command && feeds[command as FeedName]) {
+        runFeed(command as FeedName)
+            .then(() => process.exit(0))
+            .catch((error) => {
+                console.error(error);
+                process.exit(1);
+            });
+    } else {
+        if (command) console.error(`Unknown command: ${command}`);
+        console.log('\nUsage: tsx feeds/index.ts <command>');
+        console.log('\nCommands:');
+        console.log('  all        - Run all feeds');
+        console.log('  daemon     - Run feeds on scheduled intervals');
+        console.log('  alienvault    - Run AlienVault OTX sync');
+        console.log('  cisa          - Run CISA KEV sync');
+        console.log('  nvd           - Run NVD CVE sync');
+        console.log('  abusessl      - Run Abuse.ch SSL sync');
+        console.log('  threatfox     - Run ThreatFox sync');
+        console.log('  urlhaus       - Run URLhaus sync');
+        console.log('  malwarebazaar - Run MalwareBazaar sync');
+        console.log('  openphish     - Run OpenPhish sync');
+        console.log('  mitre         - Run MITRE ATT&CK sync');
+        console.log('  mispgalaxy    - Run MISP Galaxy threat actor enrichment');
         process.exit(1);
-    });
-} else if (command && feeds[command as FeedName]) {
-    runFeed(command as FeedName)
-        .then(() => process.exit(0))
-        .catch((error) => {
-            console.error(error);
-            process.exit(1);
-        });
-} else if (command) {
-    console.error(`Unknown command: ${command}`);
-    console.log('\nUsage: tsx feeds/index.ts <command>');
-    console.log('\nCommands:');
-    console.log('  all        - Run all feeds');
-    console.log('  daemon     - Run feeds on scheduled intervals');
-    console.log('  alienvault    - Run AlienVault OTX sync');
-    console.log('  cisa          - Run CISA KEV sync');
-    console.log('  nvd           - Run NVD CVE sync');
-    console.log('  abusessl      - Run Abuse.ch SSL sync');
-    console.log('  threatfox     - Run ThreatFox sync');
-    console.log('  urlhaus       - Run URLhaus sync');
-    console.log('  malwarebazaar - Run MalwareBazaar sync');
-    console.log('  openphish     - Run OpenPhish sync');
-    console.log('  mitre         - Run MITRE ATT&CK sync');
-    console.log('  mispgalaxy    - Run MISP Galaxy threat actor enrichment');
-    process.exit(1);
+    }
 }

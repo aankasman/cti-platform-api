@@ -14,6 +14,7 @@
 import { db } from '@rinjani/db';
 import { iocs, syncLogs } from '@rinjani/db/schema';
 import { eq } from '@rinjani/db';
+import { daysSinceLastSync } from './delta-sync.js';
 
 // =============================================================================
 // Configuration
@@ -128,12 +129,14 @@ export async function syncThreatFox(): Promise<SyncResult> {
         return { processed: 0, failed: 0, errors: ['No Auth-Key configured'] };
     }
 
-    console.log(`[ThreatFox] Fetching IOCs from last ${SYNC_DAYS} days...`);
+    // Delta: compute time window based on last successful sync
+    const syncDays = await daysSinceLastSync('threatfox', SYNC_DAYS);
+    console.log(`[ThreatFox] Fetching IOCs from last ${syncDays} days (default ${SYNC_DAYS})...`);
 
     const result: SyncResult = { processed: 0, failed: 0, errors: [] };
 
     try {
-        const iocData = await fetchRecentIOCs(SYNC_DAYS);
+        const iocData = await fetchRecentIOCs(syncDays);
         console.log(`[ThreatFox] Fetched ${iocData.length} IOCs`);
 
         // Batch process IOCs

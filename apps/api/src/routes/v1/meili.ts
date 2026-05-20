@@ -52,10 +52,14 @@ meili.post('/search/instant/reindex', async (c) => {
         return c.json({ data: { success: false, message: 'MeiliSearch unavailable' } }, 503);
     }
 
-    // Re-initialize the index settings
-    await meiliSearch.setupIndex();
-    log.info('MeiliSearch reindex triggered');
-    return c.json({ data: { success: true, message: 'Index settings refreshed. Documents will sync via stream consumers.' } });
+    // Run bulk reindex in the background (non-blocking)
+    meiliSearch.bulkReindex().then((counts) => {
+        log.info('MeiliSearch bulk reindex completed', counts);
+    }).catch((err) => {
+        log.error('MeiliSearch bulk reindex failed', { error: (err as Error).message });
+    });
+
+    return c.json({ data: { success: true, message: 'Bulk reindex started. IOCs, CVEs, and actors are being indexed from PostgreSQL.' } });
 });
 
 export default meili;

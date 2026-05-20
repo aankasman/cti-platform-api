@@ -49,6 +49,7 @@ import campaignRoutes from './v1/campaigns';
 import commentRoutes from './v1/comments';
 import retentionRoutes from './v1/retention';
 import enrichmentProviderRoutes from './v1/enrichment-providers';
+import mcpRoutes from './v1/mcp';
 
 const v1 = new Hono();
 
@@ -151,5 +152,6 @@ v1.route('/', campaignRoutes);               // Campaign tracking
 v1.route('/', commentRoutes);                // Entity comments & annotations
 v1.route('/', retentionRoutes);              // Data retention policies
 v1.route('/', enrichmentProviderRoutes);     // Enrichment provider management
+v1.route('/', mcpRoutes);                    // MCP tools registry
 
 export default v1;

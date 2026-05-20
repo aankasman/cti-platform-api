@@ -236,6 +236,114 @@ class MeilisearchService {
         }
     }
 
+    /**
+     * Bulk reindex all entities from PostgreSQL into MeiliSearch
+     * Returns count of documents indexed
+     */
+    async bulkReindex(): Promise<{ iocs: number; vulns: number; actors: number; total: number }> {
+        if (!(await this.isAvailable())) {
+            return { iocs: 0, vulns: 0, actors: 0, total: 0 };
+        }
+
+        await this.setupIndex();
+
+        const { db, sql } = await import('@rinjani/db');
+        const { iocs, vulnerabilities, threatActors } = await import('@rinjani/db/schema');
+        const BATCH = 5000;
+        const counts = { iocs: 0, vulns: 0, actors: 0, total: 0 };
+
+        // ── IOCs ────────────────────────────────────────────────────────
+        let iocOffset = 0;
+        while (true) {
+            const rows = await db.select({
+                id: iocs.id,
+                value: iocs.value,
+                type: iocs.type,
+                severity: iocs.severity,
+                tags: iocs.tags,
+                source: iocs.source,
+                updatedAt: iocs.updatedAt,
+            }).from(iocs).limit(BATCH).offset(iocOffset);
+
+            if (rows.length === 0) break;
+
+            const docs: MeiliDocument[] = rows.map(r => ({
+                id: r.id,
+                type: 'ioc' as const,
+                title: r.value ?? r.id,
+                value: r.value ?? undefined,
+                riskScore: r.severity === 'critical' ? 100 : r.severity === 'high' ? 75 : r.severity === 'medium' ? 50 : r.severity === 'low' ? 25 : 0,
+                tags: Array.isArray(r.tags) ? r.tags.filter(Boolean) as string[] : [],
+                updatedAt: r.updatedAt?.toISOString?.() ?? new Date().toISOString(),
+            }));
+
+            await this.indexDocuments(docs);
+            counts.iocs += docs.length;
+            iocOffset += BATCH;
+            log.info('Bulk reindex IOCs progress', { indexed: counts.iocs });
+        }
+
+        // ── Vulnerabilities ─────────────────────────────────────────────
+        let vulnOffset = 0;
+        while (true) {
+            const rows = await db.select({
+                id: vulnerabilities.id,
+                cveId: vulnerabilities.cveId,
+                description: vulnerabilities.description,
+                severity: vulnerabilities.severity,
+                updatedAt: vulnerabilities.updatedAt,
+            }).from(vulnerabilities).limit(BATCH).offset(vulnOffset);
+
+            if (rows.length === 0) break;
+
+            const docs: MeiliDocument[] = rows.map(r => ({
+                id: r.id,
+                type: 'cve' as const,
+                title: r.cveId ?? r.id,
+                description: r.description ?? undefined,
+                riskScore: r.severity === 'critical' ? 100 : r.severity === 'high' ? 75 : r.severity === 'medium' ? 50 : r.severity === 'low' ? 25 : 0,
+                tags: [],
+                updatedAt: r.updatedAt?.toISOString?.() ?? new Date().toISOString(),
+            }));
+
+            await this.indexDocuments(docs);
+            counts.vulns += docs.length;
+            vulnOffset += BATCH;
+            log.info('Bulk reindex Vulns progress', { indexed: counts.vulns });
+        }
+
+        // ── Threat Actors ───────────────────────────────────────────────
+        let actorOffset = 0;
+        while (true) {
+            const rows = await db.select({
+                id: threatActors.id,
+                name: threatActors.name,
+                description: threatActors.description,
+                updatedAt: threatActors.updatedAt,
+            }).from(threatActors).limit(BATCH).offset(actorOffset);
+
+            if (rows.length === 0) break;
+
+            const docs: MeiliDocument[] = rows.map(r => ({
+                id: r.id,
+                type: 'actor' as const,
+                title: r.name ?? r.id,
+                description: r.description ?? undefined,
+                tags: [],
+                updatedAt: r.updatedAt?.toISOString?.() ?? new Date().toISOString(),
+            }));
+
+            await this.indexDocuments(docs);
+            counts.actors += docs.length;
+            actorOffset += BATCH;
+            log.info('Bulk reindex Actors progress', { indexed: counts.actors });
+        }
+
+        counts.total = counts.iocs + counts.vulns + counts.actors;
+        log.info('Bulk reindex complete', counts);
+        return counts;
+    }
+
     resetAvailability(): void {
         this.available = null;
     }

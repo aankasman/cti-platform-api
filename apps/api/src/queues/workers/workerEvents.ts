@@ -29,15 +29,13 @@ feedSyncWorker.on('completed', async (job, result) => {
         processedAt: result?.processedAt,
     });
 
-    // Create bell notification for dashboard if new IOCs were ingested
+    // Create bell notification for dashboard ONLY if new IOCs were actually ingested
     const indicatorsAdded = result?.indicatorsAdded || 0;
     const indicatorsProcessed = result?.indicatorsProcessed || result?.totalIndicators || indicatorsAdded;
     const source = job.data.source;
 
-    if (indicatorsProcessed > 0) {
-        const deltaMsg = indicatorsAdded > 0
-            ? `${indicatorsAdded} new IOC${indicatorsAdded > 1 ? 's' : ''} ingested (${indicatorsProcessed} processed)`
-            : `${indicatorsProcessed} IOC${indicatorsProcessed > 1 ? 's' : ''} processed (no new)`;
+    if (indicatorsAdded > 0) {
+        const deltaMsg = `${indicatorsAdded} new IOC${indicatorsAdded > 1 ? 's' : ''} ingested (${indicatorsProcessed} processed)`;
 
         await alertsQueue.add(`feed-bell-${job.id}`, {
             severity: indicatorsAdded > 10 ? 'high' : 'medium',
@@ -144,6 +142,9 @@ feedSyncWorker.on('completed', async (job, result) => {
                 );
             }
         }
+    } else if (indicatorsProcessed > 0) {
+        // No new IOCs — just log it, don't spam the notification bell
+        evtLog.info('Feed sync completed, no new indicators', { source, indicatorsProcessed });
     }
 });
 

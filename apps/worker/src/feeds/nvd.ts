@@ -13,6 +13,7 @@
 import { db } from '@rinjani/db';
 import { vulnerabilities, syncLogs } from '@rinjani/db/schema';
 import { sql } from '@rinjani/db';
+import { getLastSyncTime, toISOParam } from './delta-sync.js';
 
 // =============================================================================
 // Configuration
@@ -95,7 +96,7 @@ interface SyncResult {
 // API Functions
 // =============================================================================
 
-async function fetchCVEs(startIndex: number = 0): Promise<NVDResponse> {
+async function fetchCVEs(startIndex: number = 0, since?: Date): Promise<NVDResponse> {
     if (!NVD_API_KEY) {
         throw new Error('NVD API key not configured');
     }
@@ -103,6 +104,12 @@ async function fetchCVEs(startIndex: number = 0): Promise<NVDResponse> {
     const url = new URL(NVD_BASE_URL);
     url.searchParams.append('startIndex', startIndex.toString());
     url.searchParams.append('resultsPerPage', RESULTS_PER_PAGE.toString());
+
+    // Delta: only fetch CVEs modified since last sync
+    if (since) {
+        url.searchParams.append('lastModStartDate', since.toISOString());
+        url.searchParams.append('lastModEndDate', new Date().toISOString());
+    }
 
     const response = await fetch(url.toString(), {
         headers: {
@@ -179,34 +186,48 @@ export async function syncNVD(): Promise<SyncResult> {
         return { processed: 0, failed: 0, errors: ['No API key configured'] };
     }
 
+    // Delta sync: only fetch CVEs modified since last successful sync
+    const lastSync = await getLastSyncTime('nvd');
+    const isDelta = !!lastSync;
+
+    if (isDelta) {
+        console.log(`[NVD] Delta sync — fetching CVEs modified since ${toISOParam(lastSync!)}`);
+    } else {
+        console.log(`[NVD] First run — full sync (max ${MAX_PAGES} pages)`);
+    }
+
     const result: SyncResult = { processed: 0, failed: 0, errors: [] };
 
     try {
-        // Fetch first page to get total count
+        // Fetch first page
         console.log('[NVD] Fetching initial page...');
-        const firstPage = await fetchCVEs(0);
+        const firstPage = await fetchCVEs(0, lastSync ?? undefined);
         const totalResults = firstPage.totalResults;
         const totalPages = Math.ceil(totalResults / RESULTS_PER_PAGE);
 
-        console.log(`[NVD] Total CVEs: ${totalResults.toLocaleString()}`);
-        console.log(`[NVD] Total pages: ${totalPages.toLocaleString()}`);
-        console.log(`[NVD] Syncing first ${MAX_PAGES} pages (${MAX_PAGES * RESULTS_PER_PAGE} CVEs)...`);
+        console.log(`[NVD] Total CVEs matching: ${totalResults.toLocaleString()}`);
+
+        if (totalResults === 0) {
+            console.log('[NVD] No new/modified CVEs since last sync');
+            return result;
+        }
 
         // Process first page
         await processCVEBatch(firstPage.vulnerabilities, result);
 
-        // Fetch remaining pages with rate limiting
-        const pagesToFetch = Math.min(totalPages, MAX_PAGES);
+        // For delta sync, fetch ALL pages (result set is small)
+        // For full sync, cap at MAX_PAGES
+        const pagesToFetch = isDelta ? totalPages : Math.min(totalPages, MAX_PAGES);
 
         for (let page = 1; page < pagesToFetch; page++) {
             const startIndex = page * RESULTS_PER_PAGE;
 
             console.log(`[NVD] Fetching page ${page + 1}/${pagesToFetch} (starting at ${startIndex})...`);
 
-            // Rate limiting: wait 6 seconds between requests
+            // Rate limiting
             await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_MS));
 
-            const pageData = await fetchCVEs(startIndex);
+            const pageData = await fetchCVEs(startIndex, lastSync ?? undefined);
             await processCVEBatch(pageData.vulnerabilities, result);
 
             console.log(`[NVD] Progress: ${result.processed.toLocaleString()} CVEs processed`);

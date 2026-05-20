@@ -12,6 +12,7 @@
 import { db } from '@rinjani/db';
 import { pulses, iocs, syncLogs } from '@rinjani/db/schema';
 import { eq, sql } from '@rinjani/db';
+import { getLastSyncTime, toISOParam } from './delta-sync.js';
 
 // =============================================================================
 // Configuration
@@ -213,6 +214,15 @@ async function syncAlienVault(): Promise<SyncResult> {
     console.log('[AlienVault] Starting sync...');
     console.log(`[AlienVault] API URL: ${ALIENVAULT_BASE_URL}`);
 
+    // Delta sync: only fetch pulses modified since last successful sync
+    const lastSync = await getLastSyncTime('alienvault_pulses');
+    const modifiedSince = lastSync ? toISOParam(lastSync) : null;
+    if (modifiedSince) {
+        console.log(`[AlienVault] Delta sync — fetching pulses modified since ${modifiedSince}`);
+    } else {
+        console.log('[AlienVault] First run — full sync');
+    }
+
     const result: SyncResult = { processed: 0, failed: 0, errors: [] };
 
     if (!ALIENVAULT_API_KEY) {
@@ -231,9 +241,11 @@ async function syncAlienVault(): Promise<SyncResult> {
             console.log(`[AlienVault] Fetching subscribed pulses page ${page}/${MAX_PAGES}...`);
 
             // Wrap API call with timeout
-            const fetchPromise = otxRequest<OTXResponse>(
-                `/api/v1/pulses/subscribed?limit=${SYNC_LIMIT}&page=${page}`
-            );
+            let endpoint = `/api/v1/pulses/subscribed?limit=${SYNC_LIMIT}&page=${page}`;
+            if (modifiedSince) {
+                endpoint += `&modified_since=${modifiedSince}`;
+            }
+            const fetchPromise = otxRequest<OTXResponse>(endpoint);
 
             const timeoutPromise = new Promise<never>((_, reject) =>
                 setTimeout(() => reject(new Error('Page fetch timeout')), PAGE_TIMEOUT_MS)
@@ -401,6 +413,7 @@ async function logSync(result: SyncResult, startedAt: Date): Promise<void> {
         status: result.failed === 0 ? 'success' : 'partial',
         itemsProcessed: result.processed,
         itemsFailed: result.failed,
+        lastSyncCursor: new Date().toISOString(),
         errorMessage: result.errors.length > 0 ? result.errors.slice(0, 5).join('\n') : null,
         startedAt,
         completedAt: new Date(),

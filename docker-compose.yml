@@ -529,6 +529,10 @@ services:
       - SEARXNG_URL=http://v3-searxng:8080
       - API_KEYS=${API_KEYS:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # ── AI / LLM Provider Keys ──
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       # ── Enrichment API Keys ──
       - VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY:-}
       - VIRUSTOTAL_LIVEHUNT_API_KEY=${VIRUSTOTAL_LIVEHUNT_API_KEY:-}
@@ -598,6 +602,11 @@ services:
       - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
       - SHODAN_API_KEY=${SHODAN_API_KEY:-}
       - IPINFO_API_KEY=${IPINFO_API_KEY:-}
+      # ── Feed Sync API Keys ──
+      - ALIENVAULT_API_KEY=${ALIENVAULT_API_KEY:-}
+      - THREATFOX_AUTH_KEY=${ABUSECH_AUTH_KEY:-}
+      - URLHAUS_AUTH_KEY=${ABUSECH_AUTH_KEY:-}
+      - MALWAREBAZAAR_AUTH_KEY=${ABUSECH_AUTH_KEY:-}
     depends_on:
       v3-pgbouncer:
         condition: service_healthy
