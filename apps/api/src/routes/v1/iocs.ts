@@ -21,6 +21,19 @@ import { ConflictError } from '../../lib/errors';
 
 const router = new Hono();
 
+/**
+ * The IOC pipeline stores all hashes under a single canonical type `hash` —
+ * the granular algorithm (md5/sha1/sha256) lives in `patternType` or the
+ * value itself. Front-end dropdowns expose the granular variants for UX, so
+ * we normalise back to the canonical bucket before querying.
+ */
+function normaliseIocType(raw: string): string {
+    const norm = raw.toLowerCase().trim();
+    if (norm.startsWith('hash')) return 'hash';
+    if (norm === 'ipv4' || norm === 'ipv6') return 'ip';
+    return norm;
+}
+
 // ============================================================================
 // IOCs (Indicators of Compromise) — Offset Pagination (OpenSearch)
 // ============================================================================
@@ -28,12 +41,15 @@ const router = new Hono();
 router.get('/iocs', async (c) => {
     const { page, pageSize, q, type, source, severity, dateFrom, dateTo } = IOCFilterSchema.parse(c.req.query());
 
-    // Use OpenSearch for fast search with facets
+    // Use OpenSearch for fast search with facets.
+    // NOTE: `type` filter maps to the OpenSearch `type` field (ip/domain/url/hash/email/cve).
+    // The granular dropdown options like `hash-sha256` should be normalised to
+    // the canonical bucket before reaching here.
     const result = await opensearch.unifiedSearch({
         query: q || '',
         filters: {
             entityType: ['ioc'],
-            ...(type ? { source: [type] } : {}), // type maps to OpenSearch type field
+            ...(type ? { type: [normaliseIocType(type)] } : {}),
             ...(source ? { source: [source] } : {}),
             ...(severity ? { severity: [severity] } : {}),
             ...(dateFrom ? { dateFrom } : {}),
