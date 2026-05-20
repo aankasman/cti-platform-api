@@ -211,11 +211,15 @@ function parseIocId(raw: string): string {
 }
 
 /**
- * Build a JSONB merge fragment that ANDs onto the existing raw_data column
- * using parameter binding for the merged object (no string interpolation).
+ * Build a JSONB merge fragment that ANDs onto the existing raw_data column.
+ *
+ * Pass the object directly so the driver serialises it once into a JSONB
+ * object. Passing JSON.stringify(patch) caused a double-encode under
+ * postgres-js: the cast produced a JSONB *string scalar* and `||` turned the
+ * result into [{}, "<stringified>"] instead of a merged object.
  */
 function mergeRawData(patch: Record<string, unknown>) {
-    return sql`COALESCE(${iocs.rawData}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`;
+    return sql`COALESCE(${iocs.rawData}, '{}'::jsonb) || ${patch}::jsonb`;
 }
 
 /** PUT /v1/iocs/:id — Partial update of IOC fields */
