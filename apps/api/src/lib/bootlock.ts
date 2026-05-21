@@ -69,6 +69,25 @@ export async function tryAcquireBootLock(): Promise<boolean> {
     }
 }
 
+/**
+ * Read-only — who currently owns the bootlock? Useful for admin dashboards
+ * that want to show "background services are running on host:pid". Returns
+ * null if no one holds the lock or Redis is unavailable.
+ */
+export async function getBootLockOwner(): Promise<{
+    owner: string | null;
+    self: string;
+    isUs: boolean;
+}> {
+    const r = getCacheConnection();
+    try {
+        const owner = await r.get(LOCK_KEY);
+        return { owner, self: OWNER_ID, isUs: owner === OWNER_ID };
+    } catch {
+        return { owner: null, self: OWNER_ID, isUs: false };
+    }
+}
+
 /** Release the lock — call from graceful shutdown. No-op if not owner. */
 export async function releaseBootLock(): Promise<void> {
     stopHeartbeat();

@@ -135,14 +135,22 @@ async function upsertUserAndIdentity(identity: NormalisedIdentity): Promise<{
     await ensureOauthIdentitiesTable();
     const email = identity.email.toLowerCase();
 
-    // Always refresh the avatar + display name on sign-in: provider data is
-    // canonical (the user may have updated their Google/GitHub avatar) and
-    // also catches the case where an earlier user row was created without one.
-    const refreshFromProvider = {
-        name: identity.name,
-        avatarUrl: identity.avatarUrl,
-        lastLogin: new Date(),
-    };
+    // Build the per-login refresh payload. Display name + lastLogin always refresh
+    // (provider is canonical for those). Avatar is conditional: if the user has
+    // uploaded a custom one through /settings/profile (stored as a `data:` URL),
+    // we never overwrite it with the OAuth provider's avatar — that wipes the
+    // user's explicit choice on every login. They can clear their custom avatar
+    // from the settings page to restore the OAuth-provided one on next sign-in.
+    function refreshPayload(existing: { avatarUrl: string | null }): {
+        name: string; lastLogin: Date; avatarUrl?: string | null;
+    } {
+        const hasCustomAvatar = !!existing.avatarUrl?.startsWith('data:');
+        return {
+            name: identity.name,
+            lastLogin: new Date(),
+            ...(hasCustomAvatar ? {} : { avatarUrl: identity.avatarUrl }),
+        };
+    }
 
     // 1. Try by existing oauth_identity (returning user via this provider)
     const existingByProvider = await db.execute(sql`
@@ -156,8 +164,10 @@ async function upsertUserAndIdentity(identity: NormalisedIdentity): Promise<{
             UPDATE oauth_identities SET last_login_at = NOW()
             WHERE provider = ${identity.provider} AND subject = ${identity.subject}
         `);
+        const [current] = await db.select({ avatarUrl: users.avatarUrl })
+            .from(users).where(eq(users.id, linkedUserId)).limit(1);
         const [updated] = await db.update(users)
-            .set(refreshFromProvider)
+            .set(refreshPayload(current ?? { avatarUrl: null }))
             .where(eq(users.id, linkedUserId))
             .returning();
         if (updated) return roleEnvelope(updated);
@@ -173,7 +183,7 @@ async function upsertUserAndIdentity(identity: NormalisedIdentity): Promise<{
             ON CONFLICT (provider, subject) DO UPDATE SET last_login_at = NOW()
         `);
         const [updated] = await db.update(users)
-            .set(refreshFromProvider)
+            .set(refreshPayload({ avatarUrl: existingByEmail.avatarUrl ?? null }))
             .where(eq(users.id, existingByEmail.id))
             .returning();
         if (updated) return roleEnvelope(updated);

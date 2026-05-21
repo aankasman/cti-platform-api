@@ -142,27 +142,54 @@ export async function geminiGenerateEmbedding(text: string): Promise<number[]> {
     if (!apiKey) throw new Error(`Gemini API key not configured (${config.apiKeyEnv})`);
 
     const url = `https://generativelanguage.googleapis.com/v1/models/${config.model}:embedContent?key=${apiKey}`;
+    const MAX_RETRIES = 3;
 
-    const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            model: `models/${config.model}`,
-            content: { parts: [{ text }] },
-            outputDimensionality: TARGET_DIM,
-        }),
-    });
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: `models/${config.model}`,
+                    content: { parts: [{ text }] },
+                    outputDimensionality: TARGET_DIM,
+                }),
+            });
 
-    if (!res.ok) {
-        const err = await res.text().catch(() => 'Unknown error');
-        throw new Error(`Gemini embedding API error ${res.status}: ${err}`);
+            if (res.ok) {
+                const data = await res.json() as { embedding: { values: number[] } };
+                return data.embedding.values.slice(0, TARGET_DIM);
+            }
+
+            // 4xx (except 429) is permanent — fail fast with a short message.
+            if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+                const err = await res.text().catch(() => '');
+                throw new Error(`Gemini embedding API error ${res.status}: ${err.slice(0, 200)}`);
+            }
+
+            // 429 / 5xx — transient. Back off and retry.
+            const waitMs = Math.min(1000 * Math.pow(2, attempt), 8000);
+            log.warn('Gemini embedding transient error — retrying', {
+                status: res.status, attempt: attempt + 1, waitMs,
+            });
+            await new Promise(r => setTimeout(r, waitMs));
+            lastError = new Error(`Gemini embedding API error ${res.status}`);
+        } catch (err) {
+            // Network error / abort — also retry.
+            lastError = err as Error;
+            if (attempt < MAX_RETRIES - 1) {
+                const waitMs = Math.min(1000 * Math.pow(2, attempt), 8000);
+                log.warn('Gemini embedding network error — retrying', {
+                    error: lastError.message, attempt: attempt + 1, waitMs,
+                });
+                await new Promise(r => setTimeout(r, waitMs));
+            }
+        }
     }
 
-    const data = await res.json() as {
-        embedding: { values: number[] };
-    };
-
-    return data.embedding.values.slice(0, TARGET_DIM);
+    // Out of retries — surface a SHORT error (no HTML body in the log).
+    throw new Error(`Gemini embedding failed after ${MAX_RETRIES} attempts: ${lastError?.message ?? 'unknown'}`);
 }
 
 export async function geminiGenerateBatchEmbeddings(texts: string[]): Promise<number[][]> {
