@@ -70,10 +70,25 @@ export const JOB_REGISTRY: ScheduledJobRegistration[] = [
         payload: { source: 'cisa' },
     },
     {
+        // PRIMARY CVE ingest. cvelistV5 delta.json refreshes every ~7
+        // minutes; we poll every 15. New CVEs typically reach our DB
+        // within 15 min of CNA disclosure. NVD often takes 5-14 days
+        // to surface the same CVE, so we keep NVD around only as a
+        // CVSS-score fallback (the work-driven enrichment trigger fires
+        // OSV first, NVD second, for any row with NULL cvss_score).
+        key: 'cveOrgSync',
+        jobId: 'scheduled-cveorg-sync',
+        name: 'cveorg-sync',
+        description: 'Sync CVE.org cvelistV5 (CNA-published CVEs, near-real-time)',
+        defaultCron: '*/15 * * * *',
+        queue: feedSyncQueue,
+        payload: { source: 'cveorg' },
+    },
+    {
         key: 'nvdSync',
         jobId: 'scheduled-nvd-sync',
         name: 'nvd-sync',
-        description: 'Sync NIST NVD CVE database (recently modified)',
+        description: 'Sync NIST NVD CVE database (CVSS backfill for older CVEs)',
         defaultCron: '0 2 * * *',
         queue: feedSyncQueue,
         payload: { source: 'nvd', options: { limit: 100 } },
