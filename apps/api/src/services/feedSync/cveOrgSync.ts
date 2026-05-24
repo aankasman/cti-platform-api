@@ -29,6 +29,7 @@
 import { db, sql } from '@rinjani/db';
 import { vulnerabilities } from '@rinjani/db/schema';
 import { createLogger } from '../../lib/logger';
+import { indexSingleVulnerability } from '../opensearch';
 import type { OTXSyncOptions, SyncResult } from './types';
 
 const log = createLogger('FeedSync:cveorg');
@@ -160,10 +161,15 @@ export async function syncCveOrgFeed(_options: OTXSyncOptions = {}): Promise<Syn
 
     // Upsert. The PG trigger fires NOTIFY rinjani_work for any row with
     // NULL cvss_score — `workListener` then queues OSV+NVD enrichment.
+    // We also call indexSingleVulnerability directly below — the trigger-
+    // based `opensearch_sync` notification drops messages whenever the
+    // API process restarts mid-write, so relying on it alone leaves
+    // CVEs in Postgres but invisible to /vulnerabilities.
+    const upsertedRows: Array<{ id: string; cveId: string }> = [];
     for (let i = 0; i < records.length; i += BATCH_SIZE) {
         const batch = records.slice(i, i + BATCH_SIZE);
         try {
-            await db.insert(vulnerabilities).values(batch)
+            const returned = await db.insert(vulnerabilities).values(batch)
                 .onConflictDoUpdate({
                     target: vulnerabilities.cveId,
                     set: {
@@ -187,11 +193,39 @@ export async function syncCveOrgFeed(_options: OTXSyncOptions = {}): Promise<Syn
                         rawData: sql`EXCLUDED.raw_data`,
                         updatedAt: new Date(),
                     },
-                });
-            result.indicatorsAdded += batch.length;
+                })
+                .returning({ id: vulnerabilities.id, cveId: vulnerabilities.cveId });
+            upsertedRows.push(...returned);
+            result.indicatorsAdded += returned.length;
         } catch (err) {
             log.error('Batch upsert failed', err as Error);
             result.errors.push(`Upsert failed: ${(err as Error).message}`);
+        }
+    }
+
+    // Index to OpenSearch directly — don't depend on the LISTEN/NOTIFY
+    // path because dropped notifications during API restarts have already
+    // bitten us. Fetch the full rows back and feed the existing indexer.
+    if (upsertedRows.length > 0) {
+        try {
+            const rows = await db.select().from(vulnerabilities)
+                .where(sql`${vulnerabilities.id} IN ${upsertedRows.map(r => r.id)}`);
+            let indexed = 0;
+            for (const row of rows) {
+                try {
+                    await indexSingleVulnerability(row as Record<string, unknown>);
+                    indexed++;
+                } catch (err) {
+                    log.warn('OpenSearch index failed for vuln', {
+                        cveId: (row as { cveId?: string }).cveId,
+                        error: (err as Error).message,
+                    });
+                }
+            }
+            log.info('CVE.org → OpenSearch index complete', { indexed, total: rows.length });
+        } catch (err) {
+            log.error('OpenSearch bulk index step failed', err as Error);
+            result.errors.push(`OS index failed: ${(err as Error).message}`);
         }
     }
 
