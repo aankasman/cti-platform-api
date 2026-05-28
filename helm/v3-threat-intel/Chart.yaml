@@ -11,10 +11,10 @@ keywords:
   - api
   - cti
 
-home: https://github.com/rinjanianalytics/v3-backend-api-rinjani
+home: https://github.com/rinjanianalytics/cti-platform-api
 
 sources:
-  - https://github.com/rinjanianalytics/v3-backend-api-rinjani
+  - https://github.com/rinjanianalytics/cti-platform-api
 
 maintainers:
   - name: RinjaniAnalytics Team

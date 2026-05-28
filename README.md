@@ -2,7 +2,7 @@
 
 **Modern, standalone threat intelligence backend with direct feed integration, embedded BullMQ pipeline monitoring, and a multi-tenant federation layer.**
 
-By [RinjaniAnalytics](https://rinjanianalytics.com) — paired with the [v304 dashboard](https://github.com/rinjanianalytics/v304-dashboard-rinjani).
+By [RinjaniAnalytics](https://rinjanianalytics.com) — paired with the [cti-platform-dashboard](https://github.com/rinjanianalytics/cti-platform-dashboard).
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-green)](https://nodejs.org/)
@@ -92,8 +92,8 @@ Workers used to run as a separate `apps/worker` process; they're now folded into
 
 ```bash
 # Clone repository
-git clone https://github.com/rinjanianalytics/v3-backend-api-rinjani.git
-cd v3-backend-api-rinjani
+git clone https://github.com/rinjanianalytics/cti-platform-api.git
+cd cti-platform-api
 
 # Install dependencies
 pnpm install
@@ -122,7 +122,7 @@ pnpm dev
 ## 📁 Project Structure
 
 ```
-v3-backend-api-rinjani/
+cti-platform-api/
 ├── apps/
 │   ├── api/                 # Hono REST + GraphQL + WS + workers (port 3001)
 │   │   └── src/
@@ -291,7 +291,7 @@ What you see:
   [`apps/api/src/queues/workers/feedSyncWorker.ts`](apps/api/src/queues/workers/feedSyncWorker.ts))
 - **Schedulers** — 13 cron entries from [`apps/api/src/queues/scheduler.ts`](apps/api/src/queues/scheduler.ts)
   with our kebab-menu actions (Edit interval / Run now / Disable). The native
-  [`/admin/schedules`](https://github.com/rinjanianalytics/v304-dashboard-rinjani/blob/main/src/app/(app)/admin/schedules/page.tsx)
+  [`/admin/schedules`](https://github.com/rinjanianalytics/cti-platform-dashboard/blob/main/src/app/(app)/admin/schedules/page.tsx)
   page in the dashboard shares the same backend so edits stay consistent
   between both UIs
 
@@ -378,6 +378,6 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 - **Website**: [rinjanianalytics.com](https://rinjanianalytics.com)
 - **Email**: [rinjanianalytics@gmail.com](mailto:rinjanianalytics@gmail.com)
-- **Dashboard repo**: [v304-dashboard-rinjani](https://github.com/rinjanianalytics/v304-dashboard-rinjani)
-- **Issues**: [GitHub Issues](https://github.com/rinjanianalytics/v3-backend-api-rinjani/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/rinjanianalytics/v3-backend-api-rinjani/discussions)
+- **Dashboard repo**: [cti-platform-dashboard](https://github.com/rinjanianalytics/cti-platform-dashboard)
+- **Issues**: [GitHub Issues](https://github.com/rinjanianalytics/cti-platform-api/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/rinjanianalytics/cti-platform-api/discussions)

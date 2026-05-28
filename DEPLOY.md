@@ -1,6 +1,6 @@
 # V3 Rinjani CTI — Deployment Guide
 
-By [RinjaniAnalytics](https://rinjanianalytics.com). Pairs with the [v304 dashboard](https://github.com/rinjanianalytics/v304-dashboard-rinjani).
+By [RinjaniAnalytics](https://rinjanianalytics.com). Pairs with the [cti-platform-dashboard](https://github.com/rinjanianalytics/cti-platform-dashboard).
 
 ## Prerequisites
 
@@ -18,7 +18,7 @@ By [RinjaniAnalytics](https://rinjanianalytics.com). Pairs with the [v304 dashbo
 ### 1. Clone and Install
 
 ```bash
-cd v3-backend-api-rinjani
+cd cti-platform-api
 pnpm install
 ```
 
@@ -413,5 +413,5 @@ manual migration step required.
 - **Website**: [rinjanianalytics.com](https://rinjanianalytics.com)
 - **Email**: [rinjanianalytics@gmail.com](mailto:rinjanianalytics@gmail.com)
 - **Documentation**: See [README.md](README.md) (features + architecture) and [SECURITY_AUDIT.md](SECURITY_AUDIT.md) (latest dependency review)
-- **Issues**: [GitHub Issues](https://github.com/rinjanianalytics/v3-backend-api-rinjani/issues)
-- **Dashboard repo**: [v304-dashboard-rinjani](https://github.com/rinjanianalytics/v304-dashboard-rinjani)
+- **Issues**: [GitHub Issues](https://github.com/rinjanianalytics/cti-platform-api/issues)
+- **Dashboard repo**: [cti-platform-dashboard](https://github.com/rinjanianalytics/cti-platform-dashboard)
