@@ -1,0 +1,97 @@
+name: 🐛 Bug report
+description: Something behaves incorrectly. Use this for crashes, wrong output, or unexpected error responses.
+title: "bug: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. The more concrete you can be, the faster we can fix it.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      description: Where in the codebase does the issue manifest?
+      options:
+        - API (Hono REST / GraphQL / WebSocket)
+        - Gateway (GraphQL Mesh stitching)
+        - BullMQ workers / scheduler / FlowProducer
+        - Feed sync (CISA / NVD / OTX / MITRE / abuse.ch / …)
+        - OpenSearch / vector search
+        - Neo4j / graph layer
+        - Auth (JWT / OAuth / cookie / API keys)
+        - Admin services / Workbench mount
+        - Vendored workbench-core (packages/workbench-core/)
+        - Database migrations / Drizzle
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: A clear, one-paragraph description of what's wrong.
+      placeholder: "When I X, I expect Y, but Z happens instead."
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to make the bug appear. Include curl commands, queries, or screenshots where helpful.
+      placeholder: |
+        1. Start the stack with `pnpm dev`
+        2. POST to `/v1/iocs/...` with this body: `{...}`
+        3. Observe response
+      render: bash
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What happened instead? Include error messages or stack traces, redacting secrets.
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Node version, OS, commit SHA or release tag, anything non-default in your `.env`.
+      placeholder: |
+        Node: v20.19.0
+        OS: Ubuntu 24.04
+        Commit: abc1234 (master)
+        Postgres: 16, Redis: 7, OpenSearch: 2.x, Neo4j: 5
+    validations:
+      required: true
+
+  - type: textarea
+    id: extras
+    attributes:
+      label: Additional context
+      description: Logs, related issues, hypotheses — anything that might help.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I've searched existing issues and this isn't a duplicate
+          required: true
+        - label: I've redacted any secrets, internal URLs, or PII from the report
+          required: true
+        - label: This is **not** a security vulnerability (I'd email rinjanianalytics@gmail.com instead per SECURITY.md)
+          required: true

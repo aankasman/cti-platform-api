@@ -1,0 +1,26 @@
+# Code owners — auto-requested reviewers on every PR touching the matched paths.
+# Format: <pattern> <@user-or-team> ...
+# See: https://docs.github.com/en/repositories/managing-your-repositories-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything not covered by a more specific rule
+*                                       @rinjanianalytics
+
+# Security-critical paths — explicit ownership signal so review can't be skipped
+/apps/api/src/middleware/auth.ts        @rinjanianalytics
+/apps/api/src/services/oauth.ts         @rinjanianalytics
+/apps/api/src/lib/bootlock.ts           @rinjanianalytics
+/SECURITY.md                            @rinjanianalytics
+/SECURITY_AUDIT.md                      @rinjanianalytics
+
+# Vendored fork — changes here have outsized supply-chain implications
+/packages/workbench-core/               @rinjanianalytics
+
+# Database schema + migrations — forward-only, never edit existing migrations
+/packages/db/drizzle/                   @rinjanianalytics
+/packages/db/src/schema/                @rinjanianalytics
+
+# Public-facing infra — these affect what visitors see and what they trust
+/README.md                              @rinjanianalytics
+/DEPLOY.md                              @rinjanianalytics
+/LICENSE                                @rinjanianalytics
+/.github/                               @rinjanianalytics

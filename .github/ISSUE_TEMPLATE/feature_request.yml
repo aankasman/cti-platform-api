@@ -1,0 +1,65 @@
+name: ✨ Feature request
+description: Propose new functionality or a meaningful improvement to existing functionality.
+title: "feat: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! For small fixes or papercuts, the bug-report template is usually a better fit — feature requests are for things that materially change what the platform does.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user-facing or operational problem does this solve? Who hits this and how often?
+      placeholder: "Operators currently have to X by Y, which is slow / error-prone / impossible because Z."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What you'd like us to build. Include sketches, mock JSON, route paths, or DB schema if applicable.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else could we do? Why is your proposal better?
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Where would this live?
+      multiple: true
+      options:
+        - New API endpoint (REST / GraphQL / TAXII)
+        - Existing endpoint extension
+        - New feed integration
+        - BullMQ pipeline / FlowProducer change
+        - Datastore schema change (Postgres / OpenSearch / Neo4j)
+        - Workbench fork (packages/workbench-core)
+        - Cross-cutting (auth, observability, deployment)
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: extras
+    attributes:
+      label: Additional context
+      description: Links to related issues, similar tools, RFCs, or threat-intel community conventions.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I've searched existing issues and discussions
+          required: true
+        - label: I've read CONTRIBUTING.md
+          required: true
