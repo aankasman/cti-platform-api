@@ -9,6 +9,8 @@ import { Hono } from 'hono';
 import { count, db, desc, sql, rawQuery } from '@rinjani/db';
 import type { RawQueryResult } from '@rinjani/db';
 import { pulses, indicators, syncLogs, threatActors } from '@rinjani/db/schema';
+// `iocs` / `vulnerabilities` / `feed_sync_runs` are queried via `rawQuery`
+// below — Drizzle schema imports aren't needed for the SQL-string path.
 import * as opensearch from '../../services/opensearch';
 import { DaysQuerySchema } from '../../lib/schemas';
 
@@ -41,6 +43,108 @@ router.get('/stats', async (c) => {
         },
     });
 });
+
+/**
+ * GET /v1/stats/sparklines?days=7
+ *
+ * Daily-bucketed counts for the four overview KPI tiles, so the dashboard
+ * can render a Workbench-style mini-trend next to each headline number.
+ *
+ * Series are zero-filled — a quiet day on a given metric returns `0` for
+ * that bucket rather than dropping the index, so frontend sparklines render
+ * with a constant array length regardless of activity.
+ *
+ *   iocs           — new IOCs created per day (iocs.created_at)
+ *   vulnerabilities — new vulns created per day (vulnerabilities.created_at)
+ *   threatActors   — actors observed per day (threat_actors.last_seen) — proxy
+ *                    for "active actors". Using created_at is misleading
+ *                    because actors are seeded en-masse by MITRE sync, so
+ *                    most days would be flat zero.
+ *   feedSyncs      — successful feed-sync runs per day (feed_sync_runs.started_at, status='completed')
+ *
+ * The shape is intentionally small (4 × ~7-30 ints) so this is cheap to
+ * fetch alongside the existing /stats call from the overview page.
+ */
+router.get('/stats/sparklines', async (c) => {
+    const { days } = DaysQuerySchema.parse(c.req.query());
+
+    // One SQL trip per metric — cheap (indexed timestamp range + GROUP BY day).
+    // Could be Promise.all'd, but the connection pool can serialize them just
+    // as fast for under-1ms per query at our row counts.
+    const series = await Promise.all([
+        bucketDaily('iocs', 'created_at', days),
+        bucketDaily('vulnerabilities', 'created_at', days),
+        bucketDaily('threat_actors', 'last_seen', days),
+        bucketDailyFeedSyncs(days),
+    ]);
+
+    return c.json({
+        success: true,
+        data: {
+            days,
+            iocs:            series[0],
+            vulnerabilities: series[1],
+            threatActors:    series[2],
+            feedSyncs:       series[3],
+        },
+    });
+});
+
+/**
+ * Generic daily bucketing helper. `table` and `column` are NOT user input —
+ * they are hardcoded identifiers from the call sites above. The day series
+ * is generated via `generate_series` so missing days return 0 (left-join).
+ */
+async function bucketDaily(
+    table: 'iocs' | 'vulnerabilities' | 'threat_actors',
+    column: 'created_at' | 'last_seen',
+    days: number,
+): Promise<number[]> {
+    const result = await rawQuery(`
+        WITH d AS (
+            SELECT generate_series(
+                date_trunc('day', NOW()) - INTERVAL '${days - 1} days',
+                date_trunc('day', NOW()),
+                INTERVAL '1 day'
+            )::date AS day
+        )
+        SELECT
+            d.day,
+            COALESCE(COUNT(t.${column}), 0)::int AS n
+        FROM d
+        LEFT JOIN ${table} t
+            ON date_trunc('day', t.${column}) = d.day
+        GROUP BY d.day
+        ORDER BY d.day ASC
+    `) as RawQueryResult<{ day: string; n: number }>;
+    return result.rows.map(r => Number(r.n));
+}
+
+/**
+ * `feed_sync_runs` has a different shape — bucketing by `started_at` and
+ * filtering by `status='completed'` so we count successful sync runs, not
+ * failed ones. The latter are visible on /admin/services.
+ */
+async function bucketDailyFeedSyncs(days: number): Promise<number[]> {
+    const result = await rawQuery(`
+        WITH d AS (
+            SELECT generate_series(
+                date_trunc('day', NOW()) - INTERVAL '${days - 1} days',
+                date_trunc('day', NOW()),
+                INTERVAL '1 day'
+            )::date AS day
+        )
+        SELECT
+            d.day,
+            COALESCE(COUNT(r.started_at) FILTER (WHERE r.status = 'completed'), 0)::int AS n
+        FROM d
+        LEFT JOIN feed_sync_runs r
+            ON date_trunc('day', r.started_at) = d.day
+        GROUP BY d.day
+        ORDER BY d.day ASC
+    `) as RawQueryResult<{ day: string; n: number }>;
+    return result.rows.map(r => Number(r.n));
+}
 
 /**
  * GET /v1/stats/distribution
