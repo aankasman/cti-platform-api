@@ -358,8 +358,38 @@ See `apps/worker/plugins/example-rss-feed/` for reference.
 ## 📚 Documentation
 
 - [Deployment Guide](DEPLOY.md)
+- [Roadmap](ROADMAP.md)
 - [API Documentation](http://localhost:3001/docs) (when running)
 - [GraphQL Playground](http://localhost:3001/graphql)
+
+---
+
+## 🗺️ Roadmap
+
+Modern CTI is a moving target — enrichment depth, STIX 2.1 fidelity,
+detection-as-code, LLM-assisted analyst workflows. The [ROADMAP.md](ROADMAP.md)
+breaks the next ~18 months into six phases, prioritised by signal-per-
+engineering-hour for a solo maintainer:
+
+1. **Enrichment & Detection-as-Code** *(2026-06 → 2026-07)* — urlscan, GreyNoise, AbuseIPDB, Shodan, VirusTotal, PhishTank/OpenPhish; EPSS + CVSS v4; Sigma + YARA rule libraries
+2. **STIX 2.1 first-class & Federation** *(2026-08 → 2026-09)* — full entity CRUD, typed relationships in Neo4j, bundle import/export, TAXII 2.1 *push*
+3. **LLM analyst features** *(2026-10 → 2026-11)* — report-to-STIX extraction, auto-summarisation, embedding similarity (OpenSearch vector), NL→Cypher, hypothesis tracking
+4. **Outbound integrations** *(2026-12 → 2027-02)* — Slack/Teams/PagerDuty notification routing, SIEM exporters (Splunk/Elastic/Sentinel), SOAR-style playbooks over BullMQ flows, blocklist exports, sandbox triggers, JIRA/GitHub two-way sync
+5. **Surface monitoring** *(2027-03 → 2027-05)* — CertStream brand/typo-squat detection, HIBP scoped to monitored domains, public Telegram/Gist watchers, Ahmia indexed dark-web search, MITRE TTP changelogs
+6. **Platform & multi-tenancy** *(2027-06+)* — Postgres RLS, granular RBAC, SCIM, audit-log streaming, API-key scoping, data-residency hooks
+
+Plus always-on cross-cutting work (OpenTelemetry through the pipeline,
+OpenSearch ILM, IOC decay, TAXII contract tests, parser fuzzing).
+
+We're explicit about **what we won't build** — no built-in SIEM, no
+generic web crawler, no native mobile app — so the roadmap stays
+shippable. See [ROADMAP.md](ROADMAP.md#what-we-wont-build) for the
+reasoning behind each non-goal.
+
+**Want to contribute?** Phase 1 enrichers are the easiest entry point
+— pattern is well-defined, scope is bounded, one enricher per PR.
+Open an issue or comment on an existing one first so we don't duplicate
+effort.
 
 ---
 
