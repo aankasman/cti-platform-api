@@ -1,0 +1,13 @@
+# Disabling blank issues forces visitors through the templates below.
+blank_issues_enabled: false
+
+contact_links:
+  - name: 🔒 Security vulnerability
+    url: https://github.com/rinjanianalytics/cti-platform-api/blob/master/SECURITY.md
+    about: Found a security issue? Don't file a public issue — see our private reporting channel.
+  - name: 💬 Question or discussion
+    url: https://github.com/rinjanianalytics/cti-platform-api/discussions
+    about: For open-ended questions, design discussions, or anything that's not a bug or feature request.
+  - name: 📧 Direct contact
+    url: mailto:rinjanianalytics@gmail.com
+    about: For commercial inquiries or anything else the templates don't cover.
