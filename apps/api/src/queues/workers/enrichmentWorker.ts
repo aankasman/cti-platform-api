@@ -92,6 +92,29 @@ export const enrichmentWorker = new Worker<EnrichmentJobData>(
     },
     {
         connection,
-        concurrency: 5,
+        // Default rate limit matches VirusTotal's free-tier quota
+        // (4 requests / minute / API key). Each IOC enrichment makes
+        // exactly one VT call (see packages/core/src/enrichment.ts —
+        // one fetch per IOC, routed by type to ip_addresses / domains
+        // / urls / files), so 4 jobs/min ≈ 4 VT calls/min, the cap.
+        //
+        // Concurrency matches the limit because BullMQ will block
+        // additional jobs once the limit hits anyway — running more
+        // than `max` in parallel buys nothing under a tight limiter,
+        // it just queues them and immediately stalls.
+        //
+        // Override via env when you have a paid VT key:
+        //   ENRICHMENT_RATE_LIMIT_PER_MIN=300   (VT Premium tier)
+        //   ENRICHMENT_CONCURRENCY=8            (independent of limit)
+        //
+        // Leaving these unset is the safe-for-new-installs default —
+        // turning AUTO_ENRICH_ENABLED on with the stock limits won't
+        // burn the free quota even if a feed-sync fans 50 children.
+        concurrency: Number(process.env.ENRICHMENT_CONCURRENCY)
+            || Math.min(4, Number(process.env.ENRICHMENT_RATE_LIMIT_PER_MIN) || 4),
+        limiter: {
+            max: Number(process.env.ENRICHMENT_RATE_LIMIT_PER_MIN) || 4,
+            duration: 60_000,
+        },
     }
 );
