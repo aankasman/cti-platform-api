@@ -28,10 +28,10 @@
  * query duplication on the read path. Fine while the event taxonomy
  * is small; revisit if it grows past ~10 kinds.
  *
- * No auth: this is a read-only summary used by the always-visible
- * attention rail. Adding auth would mean the rail flickers empty on
- * unauthenticated state — undesirable for an ambient monitoring
- * surface.
+ * Authenticated like the rest of /v1 (X-API-Key or Bearer); the
+ * dashboard's fetch client attaches its session cookie automatically
+ * so the attention rail populates as soon as the user is signed in.
+ * Read-only — no mutating verbs are exposed here.
  */
 
 import { Hono } from 'hono';
