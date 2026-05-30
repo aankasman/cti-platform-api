@@ -499,20 +499,46 @@ router.get('/actors/active', async (c) => {
 
     // `?days=N` drives the "active in window" count (the sub-line on
     // the Threat Actors KPI tile). Defaults to 7 so older clients get
-    // the previous "active this week" behaviour. The 90-day candidate
-    // pool and the inherent windows of each scoring signal (pulses 7d,
-    // ttps 30d, recency-bonus 7d) stay fixed — they're semantic to
-    // each signal rather than the user's rolling-window selection.
+    // the previous "active this week" behaviour. The inherent windows
+    // of each scoring signal (pulses 7d, ttps 30d, recency-bonus 7d)
+    // stay fixed — they're semantic to each signal rather than the
+    // user's rolling-window selection.
     const daysRaw = Number(c.req.query('days') ?? 7);
     const activeDays = Math.max(1, Math.min(Math.floor(daysRaw) || 7, 365));
 
+    // ACTIVITY is derived from pulse mentions, NOT from `threat_actors.last_seen`.
+    // `last_seen` on MITRE-imported actors mirrors the upstream `modified`
+    // timestamp and is essentially static after import — most actors
+    // last_seen is months old, so the original `last_seen > now()-Nd`
+    // filter returned zero across the board and the KPI tile read
+    // "0 active this week" even with 16 actively-mentioned actors in
+    // the last week's OTX pulses. Pulse mentions (`pulses.adversary`
+    // matched against actor name or alias) are the truthful, live
+    // signal for "who's being talked about right now".
     const [activeRow] = await db.execute(sql`
-        SELECT COUNT(*)::int AS total
-        FROM threat_actors
-        WHERE last_seen > now() - (${activeDays}::int * interval '1 day')
+        SELECT COUNT(DISTINCT t.id)::int AS total
+        FROM threat_actors t
+        WHERE EXISTS (
+            SELECT 1 FROM pulses p
+            WHERE p.otx_modified > now() - (${activeDays}::int * interval '1 day')
+              AND p.adversary IS NOT NULL AND p.adversary <> ''
+              AND (
+                  LOWER(p.adversary) = LOWER(t.name)
+                  OR (t.aliases IS NOT NULL AND LOWER(p.adversary) IN (
+                      SELECT LOWER(elem::text)
+                      FROM jsonb_array_elements_text((t.aliases #>> '{}')::jsonb) AS elem
+                  ))
+              )
+        )
     `) as unknown as Array<{ total: number }>;
     const totalActiveThisWeek = Number(activeRow?.total ?? 0);
 
+    // Candidate pool: actors mentioned in pulses in the last 90d, OR with
+    // MITRE-fresh last_seen in the last 90d. The OR keeps the original
+    // semantics around when MITRE actually does refresh, and adds the
+    // live-pulse-mention path so actors that MITRE hasn't touched in
+    // months but ARE active in feeds still surface in the watchlist.
+    //
     // `aliases` is stored as a JSONB *string* containing JSON (double-encoded);
     // unwrap via `#>> '{}'` then re-cast. `pulses.adversary` is plain text so
     // we match it case-insensitively against the actor's name AND any alias.
@@ -524,8 +550,19 @@ router.get('/actors/active', async (c) => {
             country, sophistication, primary_motivation,
             first_seen, last_seen, updated_at
           FROM threat_actors
-          WHERE last_seen IS NOT NULL
-            AND last_seen > now() - interval '90 days'
+          WHERE (last_seen IS NOT NULL AND last_seen > now() - interval '90 days')
+             OR EXISTS (
+                  SELECT 1 FROM pulses p
+                  WHERE p.otx_modified > now() - interval '90 days'
+                    AND p.adversary IS NOT NULL AND p.adversary <> ''
+                    AND (
+                        LOWER(p.adversary) = LOWER(threat_actors.name)
+                        OR (aliases IS NOT NULL AND LOWER(p.adversary) IN (
+                            SELECT LOWER(elem::text)
+                            FROM jsonb_array_elements_text((aliases #>> '{}')::jsonb) AS elem
+                        ))
+                    )
+              )
         )
         SELECT
           b.*,

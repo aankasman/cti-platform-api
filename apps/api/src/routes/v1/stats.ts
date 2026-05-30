@@ -60,15 +60,17 @@ router.get('/stats', async (c) => {
 });
 
 /**
- * Counts of records that arrived (or were last-seen, for actors) within
- * the last N days. Same shape as the `counts` object so the frontend can
- * use either interchangeably.
+ * Counts of records active within the last N days. Same shape as the
+ * `counts` object so the frontend can use either interchangeably.
  *
  *   • iocs/vulnerabilities/pulses/indicators — bucket by `created_at`
  *     (when the row landed in our DB).
- *   • threatActors — bucket by `last_seen` (when MITRE / OTX last saw
- *     activity for the actor). `created_at` would lie because actors
- *     get seeded en-masse on MITRE sync and most days would read zero.
+ *   • threatActors — distinct actors mentioned in pulses within the
+ *     window. `last_seen` mirrors MITRE's upstream `modified` and is
+ *     essentially static after import (most actors haven't been
+ *     re-touched in months), so filtering by it returns zero across
+ *     the board. Pulse-adversary matching is the truthful, live
+ *     signal of "active" actors.
  */
 async function getWindowCounts(days: number): Promise<{
     vulnerabilities: number;
@@ -88,7 +90,22 @@ async function getWindowCounts(days: number): Promise<{
             (SELECT COUNT(*)::int FROM iocs WHERE created_at > now() - (${days}::int * interval '1 day'))            AS iocs,
             (SELECT COUNT(*)::int FROM vulnerabilities WHERE created_at > now() - (${days}::int * interval '1 day')) AS vulnerabilities,
             (SELECT COUNT(*)::int FROM pulses WHERE created_at > now() - (${days}::int * interval '1 day'))          AS pulses,
-            (SELECT COUNT(*)::int FROM threat_actors WHERE last_seen > now() - (${days}::int * interval '1 day'))    AS threat_actors,
+            (
+                SELECT COUNT(DISTINCT t.id)::int
+                FROM threat_actors t
+                WHERE EXISTS (
+                    SELECT 1 FROM pulses p
+                    WHERE p.otx_modified > now() - (${days}::int * interval '1 day')
+                      AND p.adversary IS NOT NULL AND p.adversary <> ''
+                      AND (
+                          LOWER(p.adversary) = LOWER(t.name)
+                          OR (t.aliases IS NOT NULL AND LOWER(p.adversary) IN (
+                              SELECT LOWER(elem::text)
+                              FROM jsonb_array_elements_text((t.aliases #>> '{}')::jsonb) AS elem
+                          ))
+                      )
+                )
+            ) AS threat_actors,
             (SELECT COUNT(*)::int FROM indicators WHERE created_at > now() - (${days}::int * interval '1 day'))      AS indicators
     `);
     const row = result.rows[0] ?? {
@@ -115,10 +132,13 @@ async function getWindowCounts(days: number): Promise<{
  *
  *   iocs           — new IOCs created per day (iocs.created_at)
  *   vulnerabilities — new vulns created per day (vulnerabilities.created_at)
- *   threatActors   — actors observed per day (threat_actors.last_seen) — proxy
- *                    for "active actors". Using created_at is misleading
- *                    because actors are seeded en-masse by MITRE sync, so
- *                    most days would be flat zero.
+ *   threatActors   — distinct actors mentioned in OTX pulses per day
+ *                    (pulses.adversary matched against actor name/aliases).
+ *                    Used to be bucketed by `threat_actors.last_seen` but
+ *                    that mirrors MITRE's upstream `modified` and is
+ *                    essentially static after import, so the series read
+ *                    flat-zero for the user's window. Pulse mentions are
+ *                    the truthful, live signal of actor activity.
  *   feedSyncs      — successful feed-sync runs per day (feed_sync_runs.started_at, status='completed')
  *
  * The shape is intentionally small (4 × ~7-30 ints) so this is cheap to
@@ -133,7 +153,7 @@ router.get('/stats/sparklines', async (c) => {
     const series = await Promise.all([
         bucketDaily('iocs', 'created_at', days),
         bucketDaily('vulnerabilities', 'created_at', days),
-        bucketDaily('threat_actors', 'last_seen', days),
+        bucketDailyActorMentions(days),
         bucketDailyFeedSyncs(days),
     ]);
 
@@ -155,8 +175,8 @@ router.get('/stats/sparklines', async (c) => {
  * is generated via `generate_series` so missing days return 0 (left-join).
  */
 async function bucketDaily(
-    table: 'iocs' | 'vulnerabilities' | 'threat_actors',
-    column: 'created_at' | 'last_seen',
+    table: 'iocs' | 'vulnerabilities',
+    column: 'created_at',
     days: number,
 ): Promise<number[]> {
     const result = await rawQuery(`
@@ -173,6 +193,53 @@ async function bucketDaily(
         FROM d
         LEFT JOIN ${table} t
             ON date_trunc('day', t.${column}) = d.day
+        GROUP BY d.day
+        ORDER BY d.day ASC
+    `) as RawQueryResult<{ day: string; n: number }>;
+    return result.rows.map(r => Number(r.n));
+}
+
+/**
+ * Distinct threat actors mentioned in OTX pulses per day. The match is
+ * case-insensitive against the actor's name OR any alias. `aliases` is
+ * stored as a JSONB-string-containing-JSON (double-encoded); `#>> '{}'`
+ * unwraps the outer string layer, then we re-cast and iterate via
+ * jsonb_array_elements_text. Same pattern as /v1/actors/active.
+ *
+ * COUNT(DISTINCT t.id) per day so a single popular actor mentioned in
+ * 30 pulses doesn't inflate the count — what matters is "how many
+ * different actors had observable activity each day".
+ */
+async function bucketDailyActorMentions(days: number): Promise<number[]> {
+    const result = await rawQuery(`
+        WITH d AS (
+            SELECT generate_series(
+                date_trunc('day', NOW()) - INTERVAL '${days - 1} days',
+                date_trunc('day', NOW()),
+                INTERVAL '1 day'
+            )::date AS day
+        )
+        SELECT
+            d.day,
+            COALESCE(COUNT(DISTINCT m.actor_id), 0)::int AS n
+        FROM d
+        LEFT JOIN (
+            SELECT
+                t.id AS actor_id,
+                date_trunc('day', p.otx_modified)::date AS day
+            FROM threat_actors t
+            JOIN pulses p ON (
+                p.adversary IS NOT NULL AND p.adversary <> ''
+                AND (
+                    LOWER(p.adversary) = LOWER(t.name)
+                    OR (t.aliases IS NOT NULL AND LOWER(p.adversary) IN (
+                        SELECT LOWER(elem::text)
+                        FROM jsonb_array_elements_text((t.aliases #>> '{}')::jsonb) AS elem
+                    ))
+                )
+            )
+            WHERE p.otx_modified > date_trunc('day', NOW()) - INTERVAL '${days - 1} days'
+        ) m ON m.day = d.day
         GROUP BY d.day
         ORDER BY d.day ASC
     `) as RawQueryResult<{ day: string; n: number }>;
