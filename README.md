@@ -28,6 +28,11 @@ By [RinjaniAnalytics](https://rinjanianalytics.com) — paired with the [cti-pla
 
 ## 📸 Screenshots
 
+### Threat Command — analyst dashboard
+`/` is the analyst's at-a-glance entry point: KPI tiles (indicators, vulnerabilities, threat actors, active feeds) with rolling-window sparklines and delta %, a priority-triage queue of CRIT IOCs awaiting verdict, severity distribution, ATT&CK coverage, indicator-type breakdown, trending tags, actor watchlist, and a semantic events stream (KEV adds, high-CVSS CVEs, new actors, big pulses, sync failures). The 24H / 7D / 30D switcher scopes every tile and panel to the selected window.
+
+![Threat Command — analyst dashboard](docs/screenshots/dashboard.png)
+
 ### Admin · Services — one-pane ops health
 `/admin/services` consolidates every probe into a single round-trip: datastore connectivity (Postgres / OpenSearch / Neo4j / Redis × 2), BullMQ queue depths, worker liveness, bootlock state (`held` / `unowned` / `error`), recent feed-sync runs, LLM provider configuration, OSV + NVD enrichment-source health.
 
