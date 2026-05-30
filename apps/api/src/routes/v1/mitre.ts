@@ -497,6 +497,23 @@ router.get('/actors/active', async (c) => {
     const limitRaw = Number(c.req.query('limit') ?? 10);
     const limit = Math.min(Math.max(Math.floor(limitRaw) || 10, 1), 50);
 
+    // Total count of actors active in the past 7 days. This is what the
+    // dashboard's "N active this week" sub-line reads — distinct from the
+    // length of the returned `actors` array (which is capped at `limit`
+    // and typically renders 6 in the Command page's Watchlist). Without
+    // this the sub-line lied: "6 active this week" regardless of the
+    // real count, or "0" when the requested limit was tiny.
+    //
+    // We use a strict 7-day window here rather than the 90-day candidate
+    // pool below — "this week" means "this week", not "any time in the
+    // last quarter".
+    const [activeRow] = await db.execute(sql`
+        SELECT COUNT(*)::int AS total
+        FROM threat_actors
+        WHERE last_seen > now() - interval '7 days'
+    `) as unknown as Array<{ total: number }>;
+    const totalActiveThisWeek = Number(activeRow?.total ?? 0);
+
     // `aliases` is stored as a JSONB *string* containing JSON (double-encoded);
     // unwrap via `#>> '{}'` then re-cast. `pulses.adversary` is plain text so
     // we match it case-insensitively against the actor's name AND any alias.
@@ -613,7 +630,7 @@ router.get('/actors/active', async (c) => {
 
     return c.json({
         success: true,
-        data: { actors },
+        data: { actors, total: totalActiveThisWeek },
     });
 });
 
