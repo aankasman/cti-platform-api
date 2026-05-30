@@ -5,7 +5,7 @@
 > targets, not commitments. Phases get re-ordered when real-world usage
 > tells us what matters and what doesn't.
 
-Last reviewed: **2026-05-29**.
+Last reviewed: **2026-05-30**.
 
 ## Status legend
 

@@ -27,8 +27,9 @@
  * Response is the same zero-filled array shape as /stats/sparklines so
  * the frontend Sparkline component renders identically.
  *
- * No auth — same posture as the events stream, this is a read-only
- * derivation for an ambient analyst surface.
+ * Authenticated like the rest of /v1 (X-API-Key or Bearer); the
+ * dashboard's fetch client attaches its session cookie automatically.
+ * Read-only — no mutating verbs are exposed here.
  */
 
 import { Hono } from 'hono';
