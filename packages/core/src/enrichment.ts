@@ -108,8 +108,48 @@ const IOC_PATTERNS = {
     email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
 };
 
-export function detectIOCType(value: string): IOCType | null {
+/**
+ * Strip the trailing `:port` from `IPv4:port` or `domain:port` so the
+ * type-detection regexes can match the bare host. ThreatFox emits its
+ * C2-endpoint IOCs in this format natively (`198.44.177.179:80`,
+ * `c2.example.com:443`), and the upstream lookup keys for VirusTotal
+ * et al. don't include the port either — so we normalize on the way
+ * in. IPv6 is excluded because its native form already contains
+ * colons and `[ipv6]:port` bracketing isn't used by any of our
+ * current feeds.
+ *
+ * Returns `{ host, port }` when a port was stripped, or `{ host: value }`
+ * unchanged otherwise. The caller is responsible for using `host` for
+ * upstream lookups and for surfacing `port` elsewhere if meaningful.
+ */
+export function splitHostPort(value: string): { host: string; port?: number } {
     const trimmed = value.trim();
+    // IPv4:port — four octets then `:` then 1–5 digits, end of string.
+    const ipv4Match = trimmed.match(/^((?:\d{1,3}\.){3}\d{1,3}):(\d{1,5})$/);
+    if (ipv4Match) {
+        const port = Number(ipv4Match[2]);
+        if (port >= 0 && port <= 65535) return { host: ipv4Match[1], port };
+    }
+    // domain:port — same shape on the host side; domain regex inline
+    // here rather than reusing IOC_PATTERNS.domain so we can anchor at
+    // `:` instead of end-of-string.
+    const domainMatch = trimmed.match(
+        /^((?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}):(\d{1,5})$/,
+    );
+    if (domainMatch) {
+        const port = Number(domainMatch[2]);
+        if (port >= 0 && port <= 65535) return { host: domainMatch[1], port };
+    }
+    return { host: trimmed };
+}
+
+export function detectIOCType(value: string): IOCType | null {
+    // Normalize `IP:port` / `domain:port` to the bare host first — see
+    // `splitHostPort()` for the rationale. ThreatFox C2 endpoints used
+    // to fall through every pattern and noise the worker log with
+    // "Unable to detect IOC type for value: 198.44.177.179:80" once
+    // per affected child — that error is now resolved as `ip`.
+    const trimmed = splitHostPort(value).host;
 
     if (IOC_PATTERNS.ip.test(trimmed) || IOC_PATTERNS.ipv6.test(trimmed)) return 'ip';
     if (IOC_PATTERNS.url.test(trimmed)) return 'url';
@@ -1390,6 +1430,13 @@ export async function enrichIOC(
     value: string,
     config: EnrichmentConfig = { sources: ['virustotal', 'geoip'] }
 ): Promise<EnrichedIOC> {
+    // Normalize `IP:port` / `domain:port` to the bare host before any
+    // upstream lookup — VirusTotal's /ip_addresses/ and /domains/
+    // endpoints don't accept ports, so feeding them the raw ThreatFox
+    // value would 404 every C2 endpoint silently. We keep the
+    // original `value` for the cache key + returned record so
+    // callers don't need to know about the rewrite.
+    const { host: lookupValue } = splitHostPort(value);
     const type = detectIOCType(value);
     if (!type) {
         throw new Error(`Unable to detect IOC type for value: ${value}`);
@@ -1401,10 +1448,13 @@ export async function enrichIOC(
         if (cached) return cached;
     }
 
-    // Run enrichments in parallel
+    // Run enrichments in parallel — pass the port-stripped `lookupValue`
+    // so VT/GeoIP/etc. see a clean host. The cache key + returned
+    // `EnrichedIOC.value` below keep the caller's original input so
+    // the IOC drawer still shows "198.44.177.179:80" with port context.
     const enrichmentPromises = config.sources.map(source => {
         const fn = ENRICHMENT_FUNCTIONS[source];
-        return fn ? fn(value, type) : Promise.resolve({
+        return fn ? fn(lookupValue, type) : Promise.resolve({
             source,
             timestamp: new Date(),
             success: false,
