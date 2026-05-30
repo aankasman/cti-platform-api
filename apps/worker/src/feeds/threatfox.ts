@@ -13,6 +13,7 @@
 
 import { db } from '@rinjani/db';
 import { iocs, syncLogs } from '@rinjani/db/schema';
+import { dedupTags } from '@rinjani/core/deduplication';
 import { eq } from '@rinjani/db';
 import { daysSinceLastSync } from './delta-sync.js';
 import { fetchWithRetry } from './_fetch.js';
@@ -163,11 +164,11 @@ export async function syncThreatFox(): Promise<SyncResult> {
                     severity: severity,
                     firstSeen: new Date(tfIoc.first_seen),
                     lastSeen: tfIoc.last_seen ? new Date(tfIoc.last_seen) : new Date(),
-                    tags: [
+                    tags: dedupTags([
                         'threatfox',
                         tfIoc.malware_printable,
                         ...(tfIoc.tags || []),
-                    ],
+                    ]),
                     metadata: {
                         threatfox_id: tfIoc.id,
                         malware: tfIoc.malware_printable,

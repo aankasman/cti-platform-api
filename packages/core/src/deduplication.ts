@@ -69,6 +69,37 @@ export function normalizeIOCValue(type: string, value: string): string {
 }
 
 /**
+ * Dedup an IOC tag array case-insensitively while preserving the
+ * first-seen casing for display, plus trimming and dropping empties.
+ *
+ * Several feed handlers assemble tags by spreading both their own
+ * static labels (`'threatfox'`, `file_type`, `malware_printable`) AND
+ * the upstream feed's own `tags` array — when the upstream already
+ * contains the same label, the spread produces duplicates. ThreatFox
+ * and MalwareBazaar both do this; the result is rows like
+ * `{malwarebazaar, elf, Prometei, elf, Prometei, wraith}` which then
+ * inflate trending-tag counts and trip React's key-uniqueness check
+ * when the drawer renders them.
+ *
+ * Order-preserving: keeps the first occurrence of each tag so the
+ * label order analysts already learned to scan stays stable.
+ */
+export function dedupTags(tags: ReadonlyArray<string | null | undefined>): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const t of tags) {
+        if (t == null) continue;
+        const trimmed = t.trim();
+        if (!trimmed) continue;
+        const key = trimmed.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(trimmed);
+    }
+    return out;
+}
+
+/**
  * Generate canonical ID for an IOC
  * Format: sha256(type + ':' + normalizedValue)
  * This creates a consistent, unique identifier regardless of source
