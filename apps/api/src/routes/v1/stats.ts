@@ -21,12 +21,23 @@ const router = new Hono();
 // ============================================================================
 
 router.get('/stats', async (c) => {
-    // Batch all independent queries in parallel
-    const [counts, [pulseCount], [indicatorCount], recentSyncs] = await Promise.all([
+    // `?days=N` is optional — when present, the response also includes
+    // `windowCounts` (new arrivals within the last N days). `counts`
+    // remains total-of-record so older clients keep working unchanged.
+    // The command dashboard uses `windowCounts` for the KPI tile values
+    // when the user has picked 24H/7D/30D on the rolling-window switch.
+    const daysRaw = c.req.query('days');
+    const daysParam = daysRaw != null ? Number(daysRaw) : null;
+    const days = daysParam != null && Number.isFinite(daysParam) && daysParam > 0
+        ? Math.min(Math.floor(daysParam), 365)
+        : null;
+
+    const [counts, [pulseCount], [indicatorCount], recentSyncs, windowCounts] = await Promise.all([
         opensearch.getCounts(),
         db.select({ count: count() }).from(pulses),
         db.select({ count: count() }).from(indicators),
         db.select().from(syncLogs).orderBy(desc(syncLogs.completedAt)).limit(5),
+        days != null ? getWindowCounts(days) : Promise.resolve(null),
     ]);
 
     return c.json({
@@ -39,10 +50,58 @@ router.get('/stats', async (c) => {
                 threatActors: counts.actors,
                 indicators: indicatorCount.count,
             },
+            // Only present when `?days=N` is passed. Shape mirrors `counts`
+            // so the frontend can swap one for the other without
+            // re-mapping fields.
+            ...(windowCounts != null && { windowCounts, windowDays: days }),
             recentSyncs,
         },
     });
 });
+
+/**
+ * Counts of records that arrived (or were last-seen, for actors) within
+ * the last N days. Same shape as the `counts` object so the frontend can
+ * use either interchangeably.
+ *
+ *   • iocs/vulnerabilities/pulses/indicators — bucket by `created_at`
+ *     (when the row landed in our DB).
+ *   • threatActors — bucket by `last_seen` (when MITRE / OTX last saw
+ *     activity for the actor). `created_at` would lie because actors
+ *     get seeded en-masse on MITRE sync and most days would read zero.
+ */
+async function getWindowCounts(days: number): Promise<{
+    vulnerabilities: number;
+    iocs: number;
+    pulses: number;
+    threatActors: number;
+    indicators: number;
+}> {
+    const result = await rawQuery<{
+        iocs: number;
+        vulnerabilities: number;
+        pulses: number;
+        threat_actors: number;
+        indicators: number;
+    }>(sql`
+        SELECT
+            (SELECT COUNT(*)::int FROM iocs WHERE created_at > now() - (${days}::int * interval '1 day'))            AS iocs,
+            (SELECT COUNT(*)::int FROM vulnerabilities WHERE created_at > now() - (${days}::int * interval '1 day')) AS vulnerabilities,
+            (SELECT COUNT(*)::int FROM pulses WHERE created_at > now() - (${days}::int * interval '1 day'))          AS pulses,
+            (SELECT COUNT(*)::int FROM threat_actors WHERE last_seen > now() - (${days}::int * interval '1 day'))    AS threat_actors,
+            (SELECT COUNT(*)::int FROM indicators WHERE created_at > now() - (${days}::int * interval '1 day'))      AS indicators
+    `);
+    const row = result.rows[0] ?? {
+        iocs: 0, vulnerabilities: 0, pulses: 0, threat_actors: 0, indicators: 0,
+    };
+    return {
+        vulnerabilities: Number(row.vulnerabilities),
+        iocs: Number(row.iocs),
+        pulses: Number(row.pulses),
+        threatActors: Number(row.threat_actors),
+        indicators: Number(row.indicators),
+    };
+}
 
 /**
  * GET /v1/stats/sparklines?days=7
@@ -350,17 +409,22 @@ router.get('/stats/freshness', async (c) => {
 });
 
 /**
- * GET /v1/stats/trending-tags
- * Top IOC tags from the last 30 days — powers the "Trending Now" search sidebar.
+ * GET /v1/stats/trending-tags?days=30&limit=8
+ *
+ * Top IOC tags from the last N days. Powers the "Trending Now" search
+ * sidebar and the command page's trending panel. `days` defaults to 30
+ * — the original hardcoded window — so older clients see no change.
  */
 router.get('/stats/trending-tags', async (c) => {
     const limit = Math.min(Number(c.req.query('limit') || '8'), 20);
+    const daysRaw = Number(c.req.query('days') || '30');
+    const days = Math.max(1, Math.min(Math.floor(daysRaw) || 30, 365));
     const rows = await db.execute(sql`
         SELECT tag, cnt FROM (
             SELECT unnest(tags) as tag, count(*) as cnt
             FROM iocs
             WHERE tags IS NOT NULL AND array_length(tags,1) > 0
-              AND created_at > NOW() - INTERVAL '30 days'
+              AND created_at > now() - (${days}::int * interval '1 day')
             GROUP BY tag
         ) sub
         WHERE tag <> '' AND length(tag) > 1
