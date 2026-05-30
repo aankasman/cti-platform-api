@@ -4,7 +4,7 @@
 
 import { Worker, Job } from 'bullmq';
 import { connection } from '../../services/redis';
-import { enrichIOC } from '@rinjani/core/enrichment';
+import { enrichIOC, detectIOCType } from '@rinjani/core/enrichment';
 import type { EnrichmentSource } from '@rinjani/core/enrichment';
 import type { EnrichmentJobData } from '../types';
 import { createLogger } from '../../lib/logger';
@@ -25,6 +25,19 @@ export const enrichmentWorker = new Worker<EnrichmentJobData>(
         log.info('Processing job', { jobId: job.id, iocValue: job.data.iocValue });
 
         const { iocId, iocValue, iocType, sources } = job.data;
+
+        // Skip-without-retry guard for values we genuinely can't classify
+        // (anything that's neither an IP[:port], domain[:port], URL, hash,
+        // nor email). Without this, enrichIOC throws and BullMQ retries
+        // up to `attempts: 3` per the queue config — three identical
+        // "Unable to detect IOC type" errors per malformed value, ×50
+        // children per batch can flood the log. A no-throw return with
+        // `skipped: true` keeps the per-IOC bookkeeping consistent with
+        // the "feed-sync disabled" branch above.
+        if (detectIOCType(iocValue) == null) {
+            log.warn('Skipping enrichment: cannot detect IOC type', { jobId: job.id, iocValue });
+            return { skipped: true, reason: `Unrecognized IOC value format: ${iocValue}` };
+        }
 
         try {
             await job.updateProgress(10);
