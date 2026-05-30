@@ -49,6 +49,7 @@ import enrichmentProviderRoutes from './v1/enrichment-providers';
 import mcpRoutes from './v1/mcp';
 import eventsRoutes from './v1/events';
 import watchRoutes from './v1/watch';
+import timelineRoutes from './v1/timeline';
 
 const v1 = new Hono();
 
@@ -149,5 +150,6 @@ v1.route('/', enrichmentProviderRoutes);     // Enrichment provider management
 v1.route('/', mcpRoutes);                    // MCP tools registry
 v1.route('/', eventsRoutes);                 // /events — semantic "what changed" stream
 v1.route('/', watchRoutes);                  // /watch — personal pinned entities (IOC/CVE/actor)
+v1.route('/', timelineRoutes);               // /timeline/:type/:id — per-entity activity sparkline
 
 export default v1;
