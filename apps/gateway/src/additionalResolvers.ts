@@ -63,9 +63,15 @@ const resolvers = {
     Query: {
         // ── Stats & Monitoring ──────────────────────────────────────────────
         systemHealth: async () => {
+            // `safeFetch` returns the `{}` fallback when the upstream
+            // /health probe errors or the network drops. In that case
+            // `data.status` is undefined and we used to return 'unknown';
+            // 'unreachable' is more semantic — it tells the analyst that
+            // the gateway couldn't reach the API at all, vs. the API
+            // reachable but reporting an unknown state itself.
             const data = await safeFetch<Record<string, unknown>>('/health', {});
             return {
-                status: data.status || 'unknown',
+                status: data.status || 'unreachable',
                 uptime: data.uptime || null,
                 timestamp: data.timestamp || new Date().toISOString(),
                 services: data.services || data.checks || null,

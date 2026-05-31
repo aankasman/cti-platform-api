@@ -35,60 +35,76 @@ describe('Gateway Additional Resolvers', () => {
     describe('Query.auditLogs', () => {
         const resolver = additionalResolvers.Query.auditLogs;
 
+        // Resolver returns the REST payload pass-through: `{ entries, total }`
+        // shape from `/admin/audit`. (Predecessor: `/v1/audit` returning a
+        // bare array — the tests below were authored against that older
+        // shape and are now updated to track the current resolver.)
+
         it('fetches audit logs from REST API', async () => {
             const mockEntries = [
                 { id: '1', action: 'create', entityType: 'ioc', userId: 'user1', createdAt: '2026-01-01' },
                 { id: '2', action: 'update', entityType: 'vuln', userId: 'user2', createdAt: '2026-01-02' },
             ];
-            globalThis.fetch = mockFetchResponse({ entries: mockEntries });
+            globalThis.fetch = mockFetchResponse({ entries: mockEntries, total: 2 });
 
             const result = await resolver(null, { limit: 10 });
 
-            expect(result).toHaveLength(2);
-            expect(result[0]).toEqual(expect.objectContaining({ id: '1', action: 'create' }));
-            expect(result[1]).toEqual(expect.objectContaining({ id: '2', action: 'update' }));
+            expect(result.entries).toHaveLength(2);
+            expect(result.entries[0]).toEqual(expect.objectContaining({ id: '1', action: 'create' }));
+            expect(result.entries[1]).toEqual(expect.objectContaining({ id: '2', action: 'update' }));
+            expect(result.total).toBe(2);
         });
 
         it('passes limit parameter to REST API', async () => {
-            globalThis.fetch = mockFetchResponse({ entries: [] });
+            globalThis.fetch = mockFetchResponse({ entries: [], total: 0 });
 
             await resolver(null, { limit: 5 });
 
             const url = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-            expect(url).toContain('/v1/audit?limit=5');
+            expect(url).toContain('/admin/audit?limit=5');
         });
 
-        it('defaults limit to 20', async () => {
-            globalThis.fetch = mockFetchResponse({ entries: [] });
+        it('omits limit param when not provided', async () => {
+            // Resolver doesn't synthesize a default — if no limit is passed,
+            // the upstream is called without one and applies its own
+            // server-side default. The old behaviour with a client-side
+            // default of 20 isn't part of the current contract.
+            globalThis.fetch = mockFetchResponse({ entries: [], total: 0 });
 
             await resolver(null, {});
 
             const url = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-            expect(url).toContain('limit=20');
+            expect(url).not.toContain('limit=');
         });
 
-        it('returns empty array on REST error', async () => {
+        it('returns empty entries on REST error', async () => {
             globalThis.fetch = mockFetchResponse({}, 500);
 
             const result = await resolver(null, { limit: 10 });
 
-            expect(result).toEqual([]);
+            // safeFetch fallback on non-2xx → the resolver's hard-coded
+            // empty page shape `{ entries: [], total: 0 }`.
+            expect(result).toEqual({ entries: [], total: 0 });
         });
 
-        it('returns empty array on network failure', async () => {
+        it('returns empty entries on network failure', async () => {
             globalThis.fetch = vi.fn().mockRejectedValue(new Error('Network error'));
 
             const result = await resolver(null, {});
 
-            expect(result).toEqual([]);
+            expect(result).toEqual({ entries: [], total: 0 });
         });
 
-        it('handles response with missing entries field', async () => {
+        it('passes through REST response as-is when 2xx (even if shape is incomplete)', async () => {
+            // safeFetch is a thin wrapper — it doesn't normalize successful
+            // responses. If REST returns `{}` with a 200, the resolver
+            // returns `{}`. GraphQL clients tolerate the missing optional
+            // `entries`/`total` fields via the schema's `JSON` typing.
             globalThis.fetch = mockFetchResponse({});
 
             const result = await resolver(null, {});
 
-            expect(result).toEqual([]);
+            expect(result).toEqual({});
         });
     });
 
