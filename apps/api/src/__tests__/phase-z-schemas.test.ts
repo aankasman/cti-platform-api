@@ -63,13 +63,21 @@ describe('AdminAuditListSchema', () => {
         expect(() => AdminAuditListSchema.parse({ limit: '200' })).toThrow();
     });
 
-    test('accepts any string action for filtering', () => {
-        const result = AdminAuditListSchema.parse({ action: 'incident' });
-        expect(result.action).toBe('incident');
+    test('rejects unknown action values', () => {
+        // `action` is z.enum(auditActionEnum.enumValues) — only the five
+        // canonical actions (create/update/delete/merge/enrich) are
+        // accepted. The previous "accepts any string action for filtering"
+        // assertion predated the schema's tightening; an arbitrary string
+        // like 'incident' is correctly rejected today.
+        expect(() => AdminAuditListSchema.parse({ action: 'incident' })).toThrow();
     });
 
     test('rejects invalid entityType enum', () => {
-        expect(() => AdminAuditListSchema.parse({ entityType: 'user' })).toThrow();
+        // Use a value definitively NOT in entityTypeEnum.enumValues. 'user'
+        // used to be the canonical bad-value example but was added to the
+        // enum when audit logging started tracking user CRUD — see
+        // packages/db/src/schema/audit.ts.
+        expect(() => AdminAuditListSchema.parse({ entityType: 'not_an_entity' })).toThrow();
     });
 });
 
