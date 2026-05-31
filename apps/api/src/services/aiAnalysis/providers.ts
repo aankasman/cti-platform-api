@@ -142,102 +142,33 @@ export async function callAnthropic(provider: AIProviderConfig, prompt: string):
 }
 
 /**
- * Call Ollama (local) API
+ * Call Ollama (local) API.
+ *
+ * Errors propagate to the caller — historically this function caught
+ * connection failures and returned a fabricated `getMockResponse()`
+ * payload (a hard-coded "medium severity / 0.7 confidence" threat
+ * assessment, etc.) so the UI always rendered SOMETHING. That payload
+ * looked like real analysis but wasn't — analysts had no way to tell
+ * the AI was unavailable, and the mock data could influence triage
+ * decisions on indicators it never actually saw.
+ *
+ * Both call sites in `analysis.ts` wrap this in a try/catch and
+ * return `{ success: false, error }`, which surfaces honestly to the
+ * client as "AI provider unreachable" — the right outcome.
  */
 export async function callOllama(provider: AIProviderConfig, prompt: string): Promise<{ response: string }> {
-    try {
-        const res = await fetch(provider.endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: provider.model,
-                prompt,
-                stream: false,
-            }),
-        });
+    const res = await fetch(provider.endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            model: provider.model,
+            prompt,
+            stream: false,
+        }),
+    });
 
-        if (!res.ok) throw new Error(`Ollama API error: ${res.status}`);
+    if (!res.ok) throw new Error(`Ollama API error: ${res.status}`);
 
-        const data: any = await res.json();
-        return { response: data.response || '' };
-    } catch (err) {
-        // Fallback to mock response if Ollama not available
-        log.info('Ollama not available, using mock response');
-        return { response: getMockResponse(prompt) };
-    }
-}
-
-// ============================================================================
-// Mock Response (fallback when no AI provider available)
-// ============================================================================
-
-export function getMockResponse(prompt: string): string {
-    if (prompt.includes('threat-assessment') || prompt.includes('IOC:')) {
-        return JSON.stringify({
-            severity: 'medium',
-            confidence: 0.7,
-            threatType: 'Suspicious activity',
-            description: 'This indicator requires further investigation.',
-            recommendations: ['Block at firewall', 'Monitor for related activity'],
-            ttps: [],
-            relatedIndicators: [],
-        });
-    }
-    if (prompt.includes('malware-classification')) {
-        return JSON.stringify({
-            family: 'Unknown',
-            variant: null,
-            confidence: 0.5,
-            behaviors: ['Network communication'],
-            capabilities: ['Data exfiltration potential'],
-            associatedActors: [],
-        });
-    }
-    if (prompt.includes('risk-score')) {
-        return JSON.stringify({
-            score: 50,
-            factors: [
-                { name: 'Unknown origin', impact: 30, description: 'Source cannot be verified' },
-                { name: 'Type risk', impact: 20, description: 'IOC type has moderate inherent risk' },
-            ],
-            mitigations: ['Add to monitoring', 'Investigate source'],
-        });
-    }
-    if (prompt.includes('CVE ID:') || prompt.includes('vulnerability analyst')) {
-        return JSON.stringify({
-            exploitabilityScore: 6.5,
-            priorityLevel: 'high',
-            attackVector: 'network',
-            attackComplexity: 'low',
-            impactAnalysis: 'This vulnerability could allow remote code execution if successfully exploited. Attackers may gain full control of affected systems.',
-            affectedSystems: ['Web servers', 'Application servers', 'Enterprise applications'],
-            remediationSteps: [
-                'Apply vendor patches immediately',
-                'Implement network segmentation',
-                'Enable enhanced logging and monitoring'
-            ],
-            workarounds: ['Disable affected features if possible', 'Implement WAF rules to block exploit attempts'],
-            relatedVulnerabilities: [],
-            threatActors: [],
-        });
-    }
-    if (prompt.includes('Threat Actor Name:') || prompt.includes('threat actor attribution')) {
-        return JSON.stringify({
-            threatLevel: 'high',
-            operationalSummary: 'This threat actor conducts sophisticated cyber operations targeting critical infrastructure and high-value organizations.',
-            primaryTargets: ['Government agencies', 'Critical infrastructure', 'Technology companies'],
-            ttpsUsed: ['T1566 - Phishing', 'T1059 - Command and Scripting Interpreter', 'T1078 - Valid Accounts'],
-            knownCampaigns: ['Operation Example 2024'],
-            attributionConfidence: 0.75,
-            defenseRecommendations: [
-                'Implement advanced email filtering',
-                'Enable MFA on all accounts',
-                'Deploy EDR solutions with behavioral analysis',
-                'Conduct regular security awareness training'
-            ],
-            indicatorsToWatch: ['Spear-phishing emails', 'Unusual authentication patterns', 'Lateral movement attempts'],
-            relatedActors: [],
-        });
-    }
-    return 'Analysis complete. Further investigation recommended.';
+    const data: any = await res.json();
+    return { response: data.response || '' };
 }
