@@ -47,3 +47,6 @@ yarn-error.log*
 !.vscode/settings.json
 !.vscode/extensions.json
 *.swp
+
+# turbo cache + per-task logs — every run modifies these, never source-of-truth
+.turbo/
