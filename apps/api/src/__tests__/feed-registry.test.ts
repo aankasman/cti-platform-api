@@ -8,18 +8,22 @@
 import { describe, it, expect } from 'vitest';
 
 describe('Feed Registry', () => {
+    // Keep this list in lock-step with FEED_REGISTRY in
+    // apps/api/src/services/feedSync/feedRegistry.ts. `cveorg` joined
+    // as the primary CVE-disclosure feed (cvelistV5, fresh within
+    // minutes of CNA disclosure); NVD remains as a CVSS-score fallback.
     const EXPECTED_FEEDS = [
-        'otx', 'cisa', 'nvd', 'abusessl', 'threatfox',
+        'otx', 'cisa', 'cveorg', 'nvd', 'abusessl', 'threatfox',
         'urlhaus', 'malwarebazaar', 'openphish', 'mitre', 'mispgalaxy',
     ];
 
     describe('getRegisteredFeeds', () => {
-        it('should return all 10 registered feed source keys', async () => {
+        it(`should return all ${EXPECTED_FEEDS.length} registered feed source keys`, async () => {
             const { getRegisteredFeeds } = await import('../services/feedSync/feedRegistry');
 
             const feeds = getRegisteredFeeds();
 
-            expect(feeds).toHaveLength(10);
+            expect(feeds).toHaveLength(EXPECTED_FEEDS.length);
             for (const key of EXPECTED_FEEDS) {
                 expect(feeds).toContain(key);
             }
@@ -36,10 +40,7 @@ describe('Feed Registry', () => {
     });
 
     describe('getFeedHandler', () => {
-        it.each([
-            'otx', 'cisa', 'nvd', 'abusessl', 'threatfox',
-            'urlhaus', 'malwarebazaar', 'openphish', 'mitre', 'mispgalaxy',
-        ])('should return a function handler for "%s"', async (source) => {
+        it.each(EXPECTED_FEEDS)('should return a function handler for "%s"', async (source) => {
             const { getFeedHandler } = await import('../services/feedSync/feedRegistry');
 
             const handler = getFeedHandler(source);
