@@ -29,9 +29,44 @@ By [RinjaniAnalytics](https://rinjanianalytics.com) — paired with the [cti-pla
 ## 📸 Screenshots
 
 ### Threat Command — analyst dashboard
-`/` is the analyst's at-a-glance entry point: KPI tiles (indicators, vulnerabilities, threat actors, active feeds) with rolling-window sparklines and delta %, a priority-triage queue of CRIT IOCs awaiting verdict, severity distribution, ATT&CK coverage, indicator-type breakdown, trending tags, actor watchlist, and a semantic events stream (KEV adds, high-CVSS CVEs, new actors, big pulses, sync failures). The 24H / 7D / 30D switcher scopes every tile and panel to the selected window.
+`/` is the analyst's at-a-glance entry point: KPI tiles (indicators, vulnerabilities, threat actors, active feeds) with rolling-window sparklines and delta %, a priority-triage queue of CRIT IOCs awaiting verdict, severity distribution, ATT&CK coverage, indicator-type breakdown, trending tags, actor watchlist, and a semantic events stream on the right rail (KEV adds, high-CVSS CVEs, new actors, big pulses, sync failures). The 24H / 7D / 30D switcher scopes every tile and panel to the selected window.
 
 ![Threat Command — analyst dashboard](docs/screenshots/dashboard.png)
+
+### Indicators — paginated IOC explorer
+`/iocs` — IPs / domains / hashes / URLs with type filter, severity filter, type-ahead search, source/severity/confidence/tags columns, sev-tinted left edge, and a click-through entity drawer with Pivot-in-graph, Copy, and Watch actions.
+
+![Indicators — paginated IOC explorer](docs/screenshots/dashboard-indicators.png)
+
+### Vulnerabilities — CVE / KEV catalogue
+`/vulnerabilities` — vendor/product, CVSS, KEV-only toggle, published-date range filter, severity-tinted left edge. Each row deep-links to the CVE drawer with KEV chip, exploit flag, attributes (CVSS, vendor, product, published, updated), and related entities surfaced via vector similarity.
+
+![Vulnerabilities — CVE / KEV catalogue](docs/screenshots/dashboard-vulnerabilities.png)
+
+### Threat actors — composite activity-scored watchlist
+`/actors` — APT groups with aliases, sophistication, motivation, resource level, and an **activity** bar driven by a composite score (OTX pulse mentions × TTP relationship recency × sophistication × recency bonus — not just `last_seen DESC`). "AI enrich missing" wires Gemini against analyst-flagged blank fields.
+
+![Threat actors — composite activity-scored watchlist](docs/screenshots/dashboard-threat-actors.png)
+
+### Graph explorer — Neo4j-backed neighbourhood view
+`/graph` — type a seed (IOC value, actor name, technique ID) and expand the neighbourhood via Cypher. Force-directed view: actor ↔ technique ↔ malware ↔ IOC ↔ vuln. Right rail shows the selected node's STIX properties + raw payload.
+
+![Graph explorer — Neo4j-backed neighbourhood view](docs/screenshots/dashboard-graph.png)
+
+### Services — one-pane ops health
+`/admin/services` consolidates every probe into a single round-trip: datastore connectivity (Postgres / OpenSearch / Neo4j / Redis × 2), API & worker liveness, bootlock state (`held` / `unowned` / `error`), feed-sync queue depths, and the most recent ingest/sync runs. The same canvas exposes LLM provider configuration and OSV/NVD enrichment-source health.
+
+![Services — one-pane ops health](docs/screenshots/dashboard-services.png)
+
+### Feeds — landscape rotation of ingested intel
+`/feeds` — the analyst-facing landscape: live counters per source (OTX pulses ingested today / week / total) plus the latest pulse stream — title, description, tags, ingestion timestamp — so you can scan what's new without opening individual IOCs first.
+
+![Feeds — landscape rotation of ingested intel](docs/screenshots/dashboard-feeds.png)
+
+### Feed config — per-source admin
+`/admin/feeds` — toggle each upstream sync on/off, set the polling interval, see the last sync's success/fail status, and **Run now** to fire an immediate sync without waiting for the schedule. Writes through to the same `reconcileScheduledJob` control plane Workbench uses.
+
+![Feed config — per-source admin](docs/screenshots/dashboard-feed-config.png)
 
 ### Embedded Workbench — BullMQ pipeline inspection
 `/admin/workbench` is a vendored fork of [Workbench](https://github.com/pontusab/workbench) (see [packages/workbench-core/](packages/workbench-core/)). Overview, queues, jobs, **flows** (FlowProducer parent/child graphs from each feed-sync batch), and **schedulers** with our custom edit / disable / run-now actions delegating to the same `reconcileScheduledJob` control plane the native `/admin/schedules` dashboard page uses.
