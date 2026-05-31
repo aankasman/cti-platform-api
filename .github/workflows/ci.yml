@@ -145,61 +145,27 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/rinjani_v3_test
 
-      # Most tests under apps/api/src/__tests__/ are integration tests that
-      # `fetch('http://localhost:3001/health')` — they need the API
-      # actually running. We start it in the background so the test step
-      # can talk to it. tsx is faster than `pnpm build && node dist`
-      # and matches what dev runs locally.
-      - name: Start API in background
-        run: pnpm --filter @rinjani/api dev > /tmp/api.log 2>&1 &
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/rinjani_v3_test
-          REDIS_URL: redis://localhost:6379
-          REDIS_QUEUE_URL: redis://localhost:6379
-          REDIS_CACHE_URL: redis://localhost:6379
-          JWT_SECRET: ci-test-jwt-secret-do-not-use-in-production
-          API_KEYS: test-api-key-for-integration-tests:admin
-          NODE_ENV: test
-          # Disable feed-sync + auto-enrich at boot — CI doesn't have OTX/NVD
-          # keys and we don't want the scheduler firing during tests.
-          FEED_SYNC_ENABLED: 'false'
-          AUTO_ENRICH_ENABLED: 'false'
-
-      # Poll /health until the API answers 200 (or 503 — service degradation
-      # is fine, we only need the HTTP server up so tests can reach
-      # individual endpoints). Cap at ~60s; if the server hasn't started
-      # by then, print the log and fail.
-      - name: Wait for API readiness
-        run: |
-          for i in $(seq 1 30); do
-            if curl -sf -o /dev/null http://localhost:3001/health \
-               || curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/health | grep -qE '^(200|503)$'; then
-              echo "API responding on :3001"
-              exit 0
-            fi
-            echo "waiting for API... ($i/30)"
-            sleep 2
-          done
-          echo "::error::API failed to start in 60s. Recent log:"
-          tail -100 /tmp/api.log || true
-          exit 1
-
-      - name: Run tests
+      # `pnpm test` runs the UNIT suite only (see
+      # apps/api/vitest.config.ts — `src/__tests__/integration/**` is
+      # excluded). Unit tests cover schema validation, scoring,
+      # registry shape, and other pure-logic concerns; they need
+      # Postgres + Redis (already started as service containers above)
+      # and nothing else.
+      #
+      # Integration tests live under `src/__tests__/integration/` and
+      # require the full local stack (Neo4j + OpenSearch + a running
+      # API on :3001 + auth-aware test calls). Run those locally with
+      # `pnpm --filter @rinjani/api test:integration` against your
+      # dev `docker compose up -d` + `pnpm dev` stack.
+      - name: Run unit tests
         run: pnpm test
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/rinjani_v3_test
-          # Match dev defaults — see services/redis.ts for the split queue+cache pattern
           REDIS_URL: redis://localhost:6379
           REDIS_QUEUE_URL: redis://localhost:6379
           REDIS_CACHE_URL: redis://localhost:6379
           JWT_SECRET: ci-test-jwt-secret-do-not-use-in-production
           NODE_ENV: test
-
-      # Surface the API log even on success — useful for debugging
-      # intermittent rate-limit / pool exhaustion issues we've seen.
-      - name: API log (always)
-        if: always()
-        run: tail -200 /tmp/api.log || true
 
   # ------------------------------------------------------------------
   # Workbench-core UI build needs Node 20+ for the Tailwind 4 oxide
