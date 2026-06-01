@@ -29,17 +29,28 @@ cp .env.example .env
 # Edit .env with your database credentials and API keys
 ```
 
-### 3. Start Docker Services
+### 3. Start the data plane in Docker
 
 ```bash
 docker compose up -d
 ```
 
-This starts:
-- PostgreSQL (port 5432)
-- Redis (port 6379)
-- OpenSearch (port 9200)
-- OpenSearch Dashboards (port 5601)
+This starts the **6-service data plane** the app talks to:
+
+| Service | Port(s) | Role |
+|---|---|---|
+| `v3-postgres` | 5432 | Primary store (Drizzle) |
+| `v3-pgbouncer` | 6432 | Transaction pooler in front of pg |
+| `v3-redis-cache` | 6381 | LRU cache + rate-limit counters |
+| `v3-redis-queue` | 6380 | BullMQ persistent queue (AOF) |
+| `v3-opensearch` | 9200 | Search + vector |
+| `v3-neo4j` | 7474 / 7687 | Graph (actors / IOCs / techniques) |
+
+Everything else (api & worker as containers, Keycloak, Vault, Traefik,
+prometheus stack) is gated behind opt-in compose profiles — see
+`docker-compose.yml` and the **Docker compose profiles** section in
+[README.md](README.md). The default `up -d` does **not** start `v3-api`, so it
+won't collide with a host `pnpm dev` on `:3001`.
 
 ### 4. Run Database Migrations
 
@@ -67,12 +78,19 @@ pnpm dev
 ### Option 1: Docker Compose
 
 ```bash
-# Build production images
-docker compose -f docker-compose.prod.yml build
+# Build app images (api + worker) and start them alongside the data plane.
+# The `apps` profile contains v3-api and v3-worker; without it the data
+# services come up but no app process runs.
+docker compose --profile apps up -d --build
 
-# Start services
-docker compose -f docker-compose.prod.yml up -d
+# Add the gateway/telemetry/platform profiles as needed:
+docker compose --profile apps --profile gateway --profile telemetry up -d
 ```
+
+> **Note:** there is no separate `docker-compose.prod.yml`. The same
+> `docker-compose.yml` covers dev + prod via profiles; production runs
+> typically combine `--profile apps --profile gateway` (Traefik in front of
+> the API) plus whatever observability stack you want.
 
 ### Option 2: Kubernetes (Helm)
 
@@ -228,7 +246,7 @@ BullMQ queue depths, worker liveness, bootlock state, recent feed-sync
 results, LLM provider configuration, and OSV/NVD enrichment-source status.
 The dashboard's `/admin/services` page renders all of it on one screen.
 
-### Metrics (OpenTelemetry)
+### Metrics (OpenTelemetry + Prometheus)
 
 Set `OTEL_ENABLED=true` and configure `OTEL_ENDPOINT`:
 
@@ -236,6 +254,28 @@ Set `OTEL_ENABLED=true` and configure `OTEL_ENDPOINT`:
 OTEL_ENABLED=true
 OTEL_ENDPOINT=http://localhost:4318
 ```
+
+The local observability stack lives behind the `telemetry` compose profile
+(prometheus, grafana, loki, tempo, promtail, plus the redis/postgres/opensearch
+exporters). Before starting it, configure the prometheus scrape key:
+
+```bash
+# 1. Mint a dedicated scrape key
+KEY="prom-scrape-$(openssl rand -hex 16)"
+
+# 2. Add the key to API_KEYS (read-only "viewer" role is sufficient)
+#    and mirror it into PROMETHEUS_SCRAPE_API_KEY:
+echo "PROMETHEUS_SCRAPE_API_KEY=$KEY" >> .env
+# append ",$KEY:viewer" to the existing API_KEYS line in .env
+
+# 3. Bring up prometheus — it sed-substitutes the env var into
+#    config/prometheus/prometheus.template.yml at startup. Compose
+#    fails fast if PROMETHEUS_SCRAPE_API_KEY is unset.
+docker compose --profile telemetry up -d v3-prometheus
+```
+
+Without this, prometheus scrapes `/v1/ops/metrics/prometheus` with an empty
+key every 15s and the API logs a steady stream of 401s.
 
 ### Logs
 

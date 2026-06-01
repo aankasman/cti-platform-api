@@ -1,10 +1,22 @@
 # Prometheus Configuration — Rinjani CTI Platform
 #
+# !! TEMPLATE FILE — DO NOT EDIT THE RENDERED prometheus.yml !!
+#
+# The v3-prometheus container substitutes ${PROMETHEUS_SCRAPE_API_KEY}
+# at startup via `sed` and writes the result to /tmp/prometheus.yml,
+# which Prometheus actually reads. This keeps the API key out of the
+# YAML in the repo. See docker-compose.yml -> v3-prometheus.command.
+#
+# To configure (local dev):
+#   1. Pick a dedicated scrape key (e.g. `prom-scrape-$(openssl rand -hex 16)`)
+#   2. Add it to API_KEYS in .env:
+#        API_KEYS=existing-key:admin,prom-scrape-XXXX:viewer
+#   3. Mirror it into PROMETHEUS_SCRAPE_API_KEY in .env
+#   4. Restart prometheus:  docker compose --profile telemetry up -d v3-prometheus
+#
 # Scrapes metrics from:
 #   - API server (custom metrics + OTEL)
-#   - Node Exporter (host metrics, if deployed)
-#   - Redis Exporter (if deployed)
-#   - PostgreSQL Exporter (if deployed)
+#   - Redis / PostgreSQL / OpenSearch exporters (telemetry profile)
 
 global:
   scrape_interval: 15s
@@ -27,9 +39,10 @@ scrape_configs:
           env: 'development'
     scrape_interval: 15s
     params:
-      # Replace with a real API key (issued via API_KEYS env) before deploying.
-      # Scrape will return 401 until this is set.
-      api_key: ['REPLACE_ME_WITH_PROMETHEUS_API_KEY']
+      # Substituted at container startup from the PROMETHEUS_SCRAPE_API_KEY
+      # env var. The literal `${PROMETHEUS_SCRAPE_API_KEY}` is NOT what gets
+      # sent — see prometheus.template.yml header for setup.
+      api_key: ['${PROMETHEUS_SCRAPE_API_KEY}']
 
   # Traefik metrics (enable when gateway profile is active)
   # - job_name: 'traefik'

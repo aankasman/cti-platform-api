@@ -149,15 +149,18 @@ pnpm install
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your credentials
+# Edit .env with your credentials (DATABASE_URL, JWT_SECRET, OAuth keys, ...)
 
-# Start Docker services
+# Start the data plane in Docker (no app containers — those run on the host
+# via `pnpm dev`). This brings up 6 services: postgres, pgbouncer, redis-cache,
+# redis-queue, opensearch, neo4j. See "Docker compose profiles" below for the
+# opt-in extras (apps, telemetry, platform, gateway, dashboard).
 docker compose up -d
 
 # Push database schema
 pnpm --filter @rinjani/db push
 
-# Start development servers
+# Start development servers (API on :3001, gateway on :4000, workers in-process)
 pnpm dev
 ```
 
@@ -190,7 +193,8 @@ cti-platform-api/
 │   └── workbench-core/      # Vendored fork of @getworkbench/core
 │                            # (BullMQ ops UI mounted at /admin/workbench)
 ├── helm/v3-threat-intel/    # Kubernetes Helm chart
-├── docker-compose.yml       # Development stack (PG + OpenSearch + Redis × 2 + Neo4j)
+├── docker-compose.yml       # Dev data plane (PG + pgbouncer + Redis ×2 + OpenSearch + Neo4j);
+│                            # apps/observability/SSO opt-in via --profile (see below)
 └── .env.example             # Environment template
 ```
 
@@ -265,18 +269,58 @@ pnpm --filter @rinjani/worker dev:standalone
 
 ---
 
-## 🐳 Docker Deployment
+## 🐳 Docker compose profiles
+
+The default `docker compose up -d` only starts the **6-service data plane** the
+app talks to: postgres, pgbouncer, redis-cache, redis-queue, opensearch, neo4j.
+Everything else is gated behind an opt-in profile so a stray `up -d` doesn't
+steal `:3001` from a host `pnpm dev` (or fight `:9090` with a running
+prometheus, etc.).
+
+| Profile | Adds | Use when |
+|---|---|---|
+| _(default)_ | postgres, pgbouncer, redis-cache, redis-queue, opensearch, neo4j | normal `pnpm dev` loop on the host |
+| `apps` | `v3-api`, `v3-worker` | running the API & worker as containers _instead_ of `pnpm dev` |
+| `dashboard` | `v3-dashboard` (Next.js) | dashboard in docker instead of `pnpm dev` in the v304 repo |
+| `platform` | `v3-keycloak`, `v3-vault` | testing SSO / vault-backed secrets; both have env-var fallbacks |
+| `gateway` | `v3-traefik` | prod-style routing in front of the API |
+| `telemetry` | prometheus, grafana, loki, tempo, promtail + redis/postgres/opensearch exporters | observability dashboards |
 
 ```bash
-# Start all services
+# Just the data plane (the common case)
 docker compose up -d
 
-# View logs
-docker logs v3-api
-docker logs v3-worker
+# Run API + worker in containers instead of `pnpm dev`
+docker compose --profile apps up -d
 
-# Stop services
-docker compose down
+# Spin up the observability stack
+docker compose --profile telemetry up -d
+```
+
+### Telemetry profile — prometheus auth
+
+`/v1/ops/metrics/prometheus` is API-key authenticated like the rest of `/v1/*`.
+Before starting the telemetry profile, mint a dedicated scrape key, add it to
+`API_KEYS`, and mirror it into `PROMETHEUS_SCRAPE_API_KEY` in `.env` — the
+prometheus container `sed`-substitutes that value into
+`config/prometheus/prometheus.template.yml` at startup so the secret never
+sits literal in the repo. The compose service fails fast (`${VAR:?...}`) if
+the env var is missing.
+
+```bash
+KEY="prom-scrape-$(openssl rand -hex 16)"
+echo "PROMETHEUS_SCRAPE_API_KEY=$KEY" >> .env
+# also append "$KEY:viewer" to API_KEYS in .env
+docker compose --profile telemetry up -d v3-prometheus
+```
+
+### Day-to-day docker commands
+
+```bash
+docker compose ps                       # what's running
+docker compose logs -f v3-postgres      # tail a service
+docker compose down                     # stop the data plane
+docker compose down -v                  # also wipe volumes (destructive)
 ```
 
 ---
@@ -355,13 +399,19 @@ configuration, and enrichment-source health. The dashboard's
 ### OpenTelemetry
 
 ```bash
-# Enable telemetry
+# Enable telemetry from the API process
 export OTEL_ENABLED=true
 export OTEL_ENDPOINT=http://localhost:4318
 
-# View traces in Jaeger
+# Start the local observability stack (prometheus, grafana, loki, tempo +
+# the redis/postgres/opensearch exporters). Requires PROMETHEUS_SCRAPE_API_KEY
+# in .env — see "Telemetry profile — prometheus auth" above.
 docker compose --profile telemetry up -d
-open http://localhost:16686
+
+# Grafana — login admin/rinjani1 (override via GRAFANA_PASSWORD)
+open http://localhost:3002
+# Tempo traces query API
+open http://localhost:3200
 ```
 
 ---

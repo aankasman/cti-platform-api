@@ -3,12 +3,32 @@
 # Core services for the V3 CTI platform
 # Usage: docker compose up -d
 #
-# Profiles:
-#   - default: postgres, pgbouncer, redis-cache, redis-queue, opensearch, neo4j, searxng, exporters
-#   - full: adds minio, rabbitmq
-#   - platform: adds keycloak, vault
-#   - telemetry: adds prometheus, grafana, loki, tempo, promtail
-#   - gateway: adds traefik reverse proxy
+# DEFAULT (no --profile) starts only the data plane the local `pnpm dev`
+# loop needs to talk to — postgres, pgbouncer, redis (cache + queue),
+# opensearch, neo4j. The app itself (api, worker, dashboard) runs on the
+# host via `pnpm dev` and is NEVER started by default — running the
+# container would collide on :3001 / :3000 with the host process.
+#
+# Profiles (opt-in):
+#   - apps:       v3-api + v3-worker  (run the API/worker as containers
+#                 INSTEAD of `pnpm dev`. Stop your host pnpm dev first.)
+#   - dashboard:  v3-dashboard (Next.js container instead of host dev)
+#   - platform:   keycloak, vault  (optional SSO + secrets — code falls
+#                 back to env vars when these aren't reachable)
+#   - gateway:    traefik reverse proxy
+#   - telemetry:  prometheus, grafana, loki, tempo, promtail, and the
+#                 redis/postgres/opensearch exporters they scrape
+#
+# Audit notes (2026-06-01):
+#   - Removed v3-minio (object storage was only in the config-registry UI,
+#     no runtime upload/download code anywhere).
+#   - Removed v3-rabbitmq (we use BullMQ on Redis; rabbit was only a
+#     placeholder in the config registry).
+#   - Removed v3-searxng (was never wired into any feature).
+#   - Moved the 3 metric exporters out of default and under `telemetry`
+#     so they only run alongside prometheus/grafana.
+#   - Moved v3-api + v3-worker behind the `apps` profile so a stray
+#     `docker compose up -d` no longer steals :3001 from `pnpm dev`.
 
 services:
   # ============================================================================
@@ -150,48 +170,6 @@ services:
       retries: 5
 
   # ============================================================================
-  # MinIO - Object Storage (for file attachments)
-  # Profile: full
-  # ============================================================================
-  v3-minio:
-    profiles: [ "full" ]
-    container_name: v3-minio
-    image: minio/minio:latest
-    restart: unless-stopped
-    environment:
-      MINIO_ROOT_USER: ${MINIO_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-minioadmin}
-    command: server /data --console-address ":9001"
-    volumes:
-      - v3_minio:/data
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
-      interval: 30s
-      timeout: 20s
-      retries: 3
-
-  # ============================================================================
-  # RabbitMQ - Advanced Message Queue (optional)
-  # Profile: full
-  # ============================================================================
-  v3-rabbitmq:
-    profiles: [ "full" ]
-    container_name: v3-rabbitmq
-    image: rabbitmq:3-management-alpine
-    restart: unless-stopped
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin}
-    volumes:
-      - v3_rabbitmq:/var/lib/rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-
-  # ============================================================================
   # Keycloak - Enterprise SSO / OIDC Provider
   # Profile: platform
   # ============================================================================
@@ -279,8 +257,10 @@ services:
 
   # ============================================================================
   # Redis Exporter - Native Redis Metrics
+  # Profile: telemetry (only useful alongside Prometheus)
   # ============================================================================
   v3-redis-exporter:
+    profiles: [ "telemetry" ]
     container_name: v3-redis-exporter
     image: oliver006/redis_exporter:v1.66.0
     restart: unless-stopped
@@ -296,8 +276,10 @@ services:
 
   # ============================================================================
   # PostgreSQL Exporter - Native PG Metrics
+  # Profile: telemetry
   # ============================================================================
   v3-postgres-exporter:
+    profiles: [ "telemetry" ]
     container_name: v3-postgres-exporter
     image: prometheuscommunity/postgres-exporter:v0.16.0
     restart: unless-stopped
@@ -311,8 +293,10 @@ services:
 
   # ============================================================================
   # OpenSearch Exporter - Cluster Metrics
+  # Profile: telemetry
   # ============================================================================
   v3-opensearch-exporter:
+    profiles: [ "telemetry" ]
     container_name: v3-opensearch-exporter
     image: prometheuscommunity/elasticsearch-exporter:v1.8.0
     restart: unless-stopped
@@ -328,6 +312,12 @@ services:
   # ============================================================================
   # Prometheus - Metrics Collection
   # Profile: telemetry
+  #
+  # Renders prometheus.template.yml -> /tmp/prometheus.yml at startup,
+  # substituting $PROMETHEUS_SCRAPE_API_KEY from the env. Keeps the API
+  # key out of the YAML in the repo. The fail-fast `[ -n ... ]` check
+  # prevents prometheus from silently scraping with an empty key (which
+  # is what produced the 15s-cadence 401 spam before).
   # ============================================================================
   v3-prometheus:
     profiles: [ "telemetry" ]
@@ -336,14 +326,26 @@ services:
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    environment:
+      PROMETHEUS_SCRAPE_API_KEY: ${PROMETHEUS_SCRAPE_API_KEY:?PROMETHEUS_SCRAPE_API_KEY must be set in .env (mirror an API_KEYS entry)}
     volumes:
       - ./config/prometheus:/etc/prometheus:ro
       - v3_prometheus:/prometheus
     ports:
       - "9090:9090"
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.retention.time=30d"
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -eu
+        sed "s|\$${PROMETHEUS_SCRAPE_API_KEY}|$$PROMETHEUS_SCRAPE_API_KEY|g" \
+          /etc/prometheus/prometheus.template.yml > /tmp/prometheus.yml
+        exec /bin/prometheus \
+          --config.file=/tmp/prometheus.yml \
+          --storage.tsdb.retention.time=30d \
+          --storage.tsdb.path=/prometheus \
+          --web.console.libraries=/usr/share/prometheus/console_libraries \
+          --web.console.templates=/usr/share/prometheus/consoles
 
   # ============================================================================
   # Grafana - Dashboards & Visualization
@@ -416,33 +418,11 @@ services:
       - v3-loki
 
   # ============================================================================
-  # SearXNG - Self-Hosted Metasearch Engine (Free Web Search)
-  # ============================================================================
-  v3-searxng:
-    container_name: v3-searxng
-    image: searxng/searxng:latest
-    restart: unless-stopped
-    volumes:
-      - ./config/searxng:/etc/searxng
-    ports:
-      - "8080:8080"
-    environment:
-      - SEARXNG_BASE_URL=http://localhost:8080
-    healthcheck:
-      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/" ]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-
-  # ============================================================================
   # API Server
+  # Profile: apps  (NOT default — would collide with host `pnpm dev` on :3001)
   # ============================================================================
   v3-api:
+    profiles: [ "apps" ]
     container_name: v3-api
     build:
       context: .
@@ -464,7 +444,6 @@ services:
       - NEO4J_PASSWORD=${NEO4J_PASSWORD:-rinjani1}
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://v3-tempo:4318
       - OTEL_SERVICE_NAME=rinjani-api
-      - SEARXNG_URL=http://v3-searxng:8080
       - API_KEYS=${API_KEYS:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       # ── AI / LLM Provider Keys ──
@@ -506,8 +485,10 @@ services:
 
   # ============================================================================
   # Background Job Worker
+  # Profile: apps  (NOT default — pairs with v3-api; same reasoning)
   # ============================================================================
   v3-worker:
+    profiles: [ "apps" ]
     container_name: v3-worker
     build:
       context: .
@@ -526,7 +507,6 @@ services:
       - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-5}
       - ENABLE_FEED_SYNC=${ENABLE_FEED_SYNC:-true}
       - SYNC_INTERVAL=${SYNC_INTERVAL:-3600000}
-      - SEARXNG_URL=http://v3-searxng:8080
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://v3-tempo:4318
       - OTEL_SERVICE_NAME=rinjani-worker
@@ -596,10 +576,6 @@ volumes:
   v3_osdata:
     driver: local
   v3_neo4j:
-    driver: local
-  v3_minio:
-    driver: local
-  v3_rabbitmq:
     driver: local
   v3_traefik_certs:
     driver: local
