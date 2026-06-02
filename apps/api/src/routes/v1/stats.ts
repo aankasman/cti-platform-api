@@ -477,21 +477,38 @@ router.get('/stats/freshness', async (c) => {
 
 /**
  * GET /v1/stats/trending-tags?days=30&limit=8
+ *           …or              ?hours=6&limit=8
  *
- * Top IOC tags from the last N days. Powers the "Trending Now" search
- * sidebar and the command page's trending panel. `days` defaults to 30
- * — the original hardcoded window — so older clients see no change.
+ * Top IOC tags from the last N days/hours. Powers the "Trending Now"
+ * search sidebar, the command page's trending panel, and the feeds
+ * page's Landscape-shift band (6H / 24H / 7D segmented control).
+ *
+ * `hours` wins over `days` when both are present so sub-day windows
+ * (the 6H / 24H toggles) can be expressed without losing the integer-
+ * day path for the 30-day default. Internally we collapse to a minutes
+ * value so both paths share one SQL.
+ *
+ * Defaults: `days=30` (the original hardcoded window) so older clients
+ * see no behaviour change.
  */
 router.get('/stats/trending-tags', async (c) => {
     const limit = Math.min(Number(c.req.query('limit') || '8'), 20);
-    const daysRaw = Number(c.req.query('days') || '30');
-    const days = Math.max(1, Math.min(Math.floor(daysRaw) || 30, 365));
+    const hoursParam = c.req.query('hours');
+    let totalMinutes: number;
+    if (hoursParam != null && hoursParam !== '') {
+        const hours = Math.max(1, Math.min(Math.floor(Number(hoursParam)) || 24, 24 * 365));
+        totalMinutes = hours * 60;
+    } else {
+        const daysRaw = Number(c.req.query('days') || '30');
+        const days = Math.max(1, Math.min(Math.floor(daysRaw) || 30, 365));
+        totalMinutes = days * 24 * 60;
+    }
     const rows = await db.execute(sql`
         SELECT tag, cnt FROM (
             SELECT unnest(tags) as tag, count(*) as cnt
             FROM iocs
             WHERE tags IS NOT NULL AND array_length(tags,1) > 0
-              AND created_at > now() - (${days}::int * interval '1 day')
+              AND created_at > now() - (${totalMinutes}::int * interval '1 minute')
             GROUP BY tag
         ) sub
         WHERE tag <> '' AND length(tag) > 1
