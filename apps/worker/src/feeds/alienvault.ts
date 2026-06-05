@@ -45,12 +45,12 @@ interface OTXPulse {
     author_name: string;
     TLP: string;
     tags: string[];
-    references: string[];
+    references: string[];   // URLs — primary sources / vendor write-ups
     adversary: string;
     targeted_countries: string[];
     industries: string[];
     malware_families: string[];
-    attack_ids: string[];
+    attack_ids: string[];  // MITRE technique IDs (e.g., "T1059.001")
     indicator_count: number;
     subscriber_count: number;
     created: string;
@@ -279,6 +279,10 @@ async function syncAlienVault(): Promise<SyncResult> {
                         industries: pulse.industries || [],
                         malwareFamilies: pulse.malware_families || [],
                         attackIds: pulse.attack_ids || [],
+                        // Capture references (source URLs OTX bundles with the
+                        // pulse) — was previously dropped on the floor; the
+                        // dashboard now renders them as a "References" section.
+                        references: pulse.references || [],
                         // OTX's `indicator_count` on the list endpoint is a stale
                         // self-report — it routinely arrives as `0` even when the
                         // expanded pulse carries a full indicators array (the
@@ -293,6 +297,11 @@ async function syncAlienVault(): Promise<SyncResult> {
                         subscriberCount: pulse.subscriber_count || 0,
                         otxCreated: pulse.created ? new Date(pulse.created) : null,
                         otxModified: pulse.modified ? new Date(pulse.modified) : null,
+                        // Persist the whole OTX payload so we have an escape
+                        // hatch for "why is field X empty here". Schema column
+                        // existed but was never written; the few KB per row is
+                        // worth it for the debugging surface.
+                        rawData: pulse as unknown as Record<string, unknown>,
                         syncedAt: new Date(),
                     };
 
