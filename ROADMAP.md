@@ -5,7 +5,7 @@
 > targets, not commitments. Phases get re-ordered when real-world usage
 > tells us what matters and what doesn't.
 
-Last reviewed: **2026-05-30**.
+Last reviewed: **2026-06-05**.
 
 ## Status legend
 
@@ -34,7 +34,7 @@ Last reviewed: **2026-05-30**.
 
 ## Phase 1 · Enrichment & Detection-as-Code
 
-**Target window: 2026-06 → 2026-07**  ·  **Status: ⚪ Planned**
+**Target window: 2026-06 → 2026-07**  ·  **Status: 🟡 In flight** (3 of 11 items shipped 2026-06-05)
 
 The highest-leverage phase: every enricher we add makes existing
 dashboard cards more decision-useful, with near-zero schema churn.
@@ -47,16 +47,28 @@ Pluggable enricher pattern — runs on ingest *and* on-demand via API.
 - ⚪ GreyNoise Community — internet-noise filter; expected to drop
   ~30% of ingested IOCs as benign mass scanners
 - ⚪ AbuseIPDB — community-reported abusive IPs
-- ⚪ Shodan InternetDB — passive enrichment, no key required
+- 🟢 **Shodan InternetDB — passive enrichment, no key required**
+  (shipped 2026-06-05: `enrichShodan()` falls back to internetdb.shodan.io
+  when no `SHODAN_API_KEY` is set; surfaces open ports, hostnames, and
+  known CVEs per IP. Default enrichment sources now include `shodan`
+  alongside `virustotal` + `geoip`.)
 - ⚪ VirusTotal v3 — multi-engine consensus (free: 4 req/min)
 - ⚪ PhishTank + OpenPhish — confirmed-phishing cross-check
 
 ### Vulnerability scoring upgrades
 
-- ⚪ EPSS (FIRST.org) — exploit-prediction score; transforms
-  *"X critical CVEs"* into *"X critical with EPSS ≥ 0.7"*
+- 🟢 **EPSS (FIRST.org) — exploit-prediction score**
+  (shipped 2026-06-05: daily worker downloads `epss-scores-current.csv.gz`,
+  bulk-UPDATEs `vulnerabilities.epss_score` + `epss_percentile`. First
+  backfill scored 6,503 of 7,095 vulns; 951 sit at EPSS ≥ 0.5. Surfaced
+  on the vulns list table, CVE drawer, and CVE detail page. Transforms
+  *"X critical CVEs"* into *"X critical with EPSS ≥ 0.7"*.)
 - ⚪ CVSS v4 fields alongside existing v3
-- ⚪ Surface `inKev` boolean on every vuln panel (data already there)
+- 🟢 **Surface `inKev` boolean on every vuln panel**
+  (shipped 2026-06-05: data was already in `vulnerabilities.is_exploited`;
+  `/v1/landscape/overview` now returns `vulnerabilities.inKev` count, the
+  Threat Command tile renders "N high · M crit · K KEV", and the vulns
+  list already had a KEV flame column + KEV-only filter toggle.)
 
 ### Detection rules — Sigma & YARA
 
