@@ -175,24 +175,54 @@ router.get('/events', async (c) => {
         `) as unknown as Promise<SyncRow[]>,
     ]);
 
-    const events: PlatformEvent[] = [
-        ...kevRows.map(mapKev),
-        ...cveRows.map(mapCve),
-        ...actorRows.map(mapActor),
-        ...pulseRows.map(mapPulse),
-        ...syncRows.map(mapSync),
+    // Map each source's rows to events, KEEP THEM GROUPED. We deliberately
+    // do NOT do a global timestamp sort + cap here because of the
+    // "KEV-tsunami" problem: when the daily CISA-KEV sync flips
+    // `is_exploited=true` on dozens of CVEs at once, every one of those
+    // rows shares the sync run's `updated_at` timestamp. A naive
+    // sort-by-timestamp puts the entire KEV batch at the top and the rail
+    // becomes "10 KEV adds in a row", drowning out new actors, large
+    // pulses, and failed syncs that an analyst actually wants to see in
+    // the same glance.
+    //
+    // Instead: stratify per kind, then round-robin merge so each kind
+    // gets a fair share of the visible window. Each kind is still
+    // internally sorted DESC by its own timestamp; the round-robin
+    // interleaves so the rail reads as a diverse "what changed across
+    // cyber" feed rather than a single-source flood.
+    const groups: PlatformEvent[][] = [
+        kevRows.map(mapKev),
+        cveRows.map(mapCve),
+        actorRows.map(mapActor),
+        pulseRows.map(mapPulse),
+        syncRows.map(mapSync),
     ];
+    const totalAcrossKinds = groups.reduce((n, g) => n + g.length, 0);
 
-    // Sort by timestamp DESC, then cap to `limit` after the merge so the
-    // mix is "most-recent across all kinds" rather than "top-10 of each".
-    events.sort((a, b) =>
-        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
-    );
-    const limited = events.slice(0, limit);
+    // Round-robin merge with descending sort within each kind already
+    // enforced by the SQL ORDER BY. Caps each kind at ceil(limit/kinds)
+    // so no single source can hog more than its share even when its raw
+    // count dwarfs the others.
+    const perKindCap = Math.max(1, Math.ceil(limit / groups.length));
+    const merged: PlatformEvent[] = [];
+    const cursors = groups.map(() => 0);
+    while (merged.length < limit) {
+        let pickedAny = false;
+        for (let i = 0; i < groups.length; i++) {
+            const g = groups[i];
+            const cursor = cursors[i];
+            if (cursor >= perKindCap || cursor >= g.length) continue;
+            merged.push(g[cursor]);
+            cursors[i] = cursor + 1;
+            pickedAny = true;
+            if (merged.length >= limit) break;
+        }
+        if (!pickedAny) break; // every kind exhausted
+    }
 
     return c.json({
         success: true,
-        data: { events: limited, total: events.length },
+        data: { events: merged, total: totalAcrossKinds },
     });
 });
 
