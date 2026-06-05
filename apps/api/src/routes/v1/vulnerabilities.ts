@@ -5,7 +5,7 @@
  */
 
 import { Hono } from 'hono';
-import { db, eq, sql, rawQuery } from '@rinjani/db';
+import { db, eq, sql, rawQuery, inArray } from '@rinjani/db';
 import { vulnerabilities } from '@rinjani/db/schema';
 import * as opensearch from '../../services/opensearch';
 import { createLogger } from '../../lib/logger';
@@ -47,13 +47,47 @@ router.get('/vulnerabilities', async (c) => {
     // OpenSearch stores cve under `value`; remap to `cveId` so the DTO
     // can pick the canonical field, then coerce the row's types
     // (cvssScore string→number, dates→ISO) in one place.
-    const mappedItems = result.items.map((item: Record<string, unknown>) =>
-        toVulnDTO({
+    //
+    // EPSS lives only in Postgres for now (the OpenSearch indexer doesn't
+    // carry EPSS columns yet — reindexing is a Phase 1+ item). One bulk
+    // SELECT covers the page in O(1) round-trips so the dashboard's
+    // Vulnerabilities table can sort/filter on EPSS as soon as the daily
+    // EPSS feed finishes its first run.
+    const cveIds = result.items
+        .map((it: Record<string, unknown>) => String((it.cveId ?? it.value ?? '') as string).toUpperCase())
+        .filter(Boolean);
+    const epssMap = new Map<string, { score: string | number | null; pct: string | number | null; updatedAt: Date | null }>();
+    if (cveIds.length > 0) {
+        try {
+            const pgRows = await db
+                .select({
+                    cveId: vulnerabilities.cveId,
+                    epssScore: vulnerabilities.epssScore,
+                    epssPercentile: vulnerabilities.epssPercentile,
+                    epssUpdatedAt: vulnerabilities.epssUpdatedAt,
+                })
+                .from(vulnerabilities)
+                .where(inArray(vulnerabilities.cveId, cveIds));
+            for (const r of pgRows) {
+                epssMap.set(r.cveId, { score: r.epssScore, pct: r.epssPercentile, updatedAt: r.epssUpdatedAt });
+            }
+        } catch (pgErr) {
+            log.warn('EPSS bulk fallback failed', { error: (pgErr as Error)?.message });
+        }
+    }
+
+    const mappedItems = result.items.map((item: Record<string, unknown>) => {
+        const cveKey = String((item.cveId ?? item.value ?? '') as string).toUpperCase();
+        const epss = epssMap.get(cveKey);
+        return toVulnDTO({
             ...item,
             cveId: item.cveId ?? item.value,
             publishedDate: item.publishedDate ?? item.createdAt ?? item.updatedAt,
-        }),
-    );
+            epssScore: item.epssScore ?? epss?.score ?? null,
+            epssPercentile: item.epssPercentile ?? epss?.pct ?? null,
+            epssUpdatedAt: item.epssUpdatedAt ?? epss?.updatedAt ?? null,
+        });
+    });
 
     return c.json({
         success: true,
@@ -84,7 +118,8 @@ router.get('/vulnerabilities/cursor', async (c) => {
 
     const result = await rawQuery(
         `SELECT id, cve_id, description, severity, cvss_score, vendor_project, product,
-                is_exploited, published_date, created_at, updated_at
+                is_exploited, epss_score, epss_percentile, epss_updated_at,
+                published_date, created_at, updated_at
          FROM vulnerabilities ${whereClause}
          ORDER BY updated_at ${orderDir} NULLS LAST, id ${orderDir}
          LIMIT ${limit + 1}`
@@ -118,32 +153,44 @@ router.get('/vulnerabilities/:cveId', async (c) => {
 
     const item = result.item;
 
-    // Fetch additional fields from PostgreSQL if missing in OpenSearch
+    // Fetch additional fields from PostgreSQL if missing in OpenSearch.
+    // EPSS is included unconditionally because the OpenSearch indexer
+    // doesn't (yet) carry the EPSS columns — the daily EPSS sync writes
+    // to Postgres only, and waiting for the next NVD reindex to backfill
+    // OpenSearch would leave the field invisible for 24h after each EPSS
+    // refresh. One small PG hit per detail load is a fair trade.
     let vendorProject = item.vendorProject || '';
     let product = item.product || '';
+    let epssScore: string | number | null = (item.epssScore as string | number | undefined) ?? null;
+    let epssPercentile: string | number | null = (item.epssPercentile as string | number | undefined) ?? null;
+    let epssUpdatedAt: string | Date | null = (item.epssUpdatedAt as string | Date | undefined) ?? null;
 
-    if (!vendorProject || !product) {
-        try {
-            const pgResult = await db
-                .select({
-                    vendorProject: vulnerabilities.vendorProject,
-                    product: vulnerabilities.product,
-                })
-                .from(vulnerabilities)
-                .where(eq(vulnerabilities.cveId, String(item.value || lookupId).toUpperCase()))
-                .limit(1);
+    try {
+        const pgResult = await db
+            .select({
+                vendorProject: vulnerabilities.vendorProject,
+                product: vulnerabilities.product,
+                epssScore: vulnerabilities.epssScore,
+                epssPercentile: vulnerabilities.epssPercentile,
+                epssUpdatedAt: vulnerabilities.epssUpdatedAt,
+            })
+            .from(vulnerabilities)
+            .where(eq(vulnerabilities.cveId, String(item.value || lookupId).toUpperCase()))
+            .limit(1);
 
-            if (pgResult.length > 0) {
-                vendorProject = vendorProject || pgResult[0].vendorProject || '';
-                product = product || pgResult[0].product || '';
-            }
-        } catch (pgErr) {
-            log.warn('PostgreSQL fallback failed for CVE detail', { cveId, error: (pgErr as Error)?.message });
+        if (pgResult.length > 0) {
+            vendorProject = vendorProject || pgResult[0].vendorProject || '';
+            product = product || pgResult[0].product || '';
+            epssScore = epssScore ?? pgResult[0].epssScore;
+            epssPercentile = epssPercentile ?? pgResult[0].epssPercentile;
+            epssUpdatedAt = epssUpdatedAt ?? pgResult[0].epssUpdatedAt;
         }
+    } catch (pgErr) {
+        log.warn('PostgreSQL fallback failed for CVE detail', { cveId, error: (pgErr as Error)?.message });
     }
 
     // DTO owns the canonical shape; the route adds the PG-recovered
-    // vendor/product and preserves the raw OpenSearch document for the
+    // vendor/product/EPSS and preserves the raw OpenSearch document for the
     // detail page's diagnostic panel.
     const mappedData = {
         ...toVulnDTO({
@@ -152,6 +199,9 @@ router.get('/vulnerabilities/:cveId', async (c) => {
             publishedDate: item.publishedDate ?? item.createdAt ?? item.updatedAt,
             vendorProject,
             product,
+            epssScore,
+            epssPercentile,
+            epssUpdatedAt,
         }),
         rawData: (item.rawData ?? null) as Record<string, unknown> | null,
     };

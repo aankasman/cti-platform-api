@@ -15,6 +15,7 @@ import { runURLhausSync } from './urlhaus';
 import { runMalwareBazaarSync } from './malwarebazaar';
 import { runOpenPhishSync } from './openphish';
 import { runNVDSync } from './nvd';
+import { runEPSSSync } from './epss';
 import { createLogger } from '../lib/logger';
 
 const log = createLogger('FeedOrchestrator');
@@ -79,6 +80,14 @@ export const feeds = {
         name: 'MISP Galaxy',
         sync: runMISPGalaxySync,
         interval: 86400000, // 24 hours (daily enrichment)
+    },
+    epss: {
+        name: 'EPSS',
+        sync: runEPSSSync,
+        // FIRST.org publishes EPSS scores daily. Anything more aggressive
+        // is wasted bandwidth (the file is ~1.7 MB compressed but tens of
+        // thousands of rows to update each pass).
+        interval: 86400000, // 24 hours
     },
 } as const;
 
@@ -206,6 +215,7 @@ if (isDirectEntry) {
         console.log('  openphish     - Run OpenPhish sync');
         console.log('  mitre         - Run MITRE ATT&CK sync');
         console.log('  mispgalaxy    - Run MISP Galaxy threat actor enrichment');
+        console.log('  epss          - Run EPSS (FIRST.org) exploit-prediction sync');
         process.exit(1);
     }
 }
