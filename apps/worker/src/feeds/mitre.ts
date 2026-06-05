@@ -22,6 +22,17 @@ interface STIXObject {
     id: string;
     name?: string;
     description?: string;
+    /** STIX 2.1 common properties — present on every object. `created` is
+     *  when the upstream authored the entity, `modified` is when they last
+     *  revised it. We map these into `stix_created` / `stix_modified` and
+     *  use `modified` as a `last_seen` fallback so the actors list can
+     *  sort by recency. */
+    created?: string;
+    modified?: string;
+    /** intrusion-set-specific recency fields. MITRE rarely populates these,
+     *  but other STIX feeds do. */
+    first_seen?: string;
+    last_seen?: string;
     external_references?: Array<{
         source_name: string;
         external_id?: string;
@@ -45,6 +56,17 @@ interface STIXObject {
     target_ref?: string;
     relationship_type?: string;
     [key: string]: unknown;
+}
+
+/**
+ * Parse a STIX timestamp into a `Date`. STIX guarantees ISO-8601 with a
+ * `Z` suffix on `created`/`modified`; we still defend against malformed
+ * input by returning `null` on parse failure rather than throwing.
+ */
+function stixDate(raw: string | undefined | null): Date | null {
+    if (!raw) return null;
+    const t = Date.parse(raw);
+    return Number.isFinite(t) ? new Date(t) : null;
 }
 
 interface STIXBundle {
@@ -189,18 +211,35 @@ export async function syncMitreAttack(): Promise<{
         if (!mitreId) continue;
 
         try {
+            // STIX timestamps — MITRE always populates `created`/`modified`
+            // and almost never `first_seen`/`last_seen` for groups, so we
+            // fall back to created/modified so the actors list can render
+            // a meaningful "Last seen" column instead of "—" everywhere.
+            const stixCreated = stixDate(obj.created);
+            const stixModified = stixDate(obj.modified);
+            const firstSeen = stixDate(obj.first_seen) ?? stixCreated;
+            const lastSeen  = stixDate(obj.last_seen)  ?? stixModified;
+
             // Use stixId field with a mitre prefix for MITRE-sourced actors
             await db.insert(threatActors).values({
                 stixId: `mitre--${mitreId}`,
                 name: obj.name || 'Unknown',
                 aliases: obj.aliases || [],
                 description: obj.description,
+                stixCreated,
+                stixModified,
+                firstSeen,
+                lastSeen,
             }).onConflictDoUpdate({
                 target: threatActors.stixId,
                 set: {
                     name: obj.name || 'Unknown',
                     aliases: obj.aliases || [],
                     description: obj.description,
+                    stixCreated,
+                    stixModified,
+                    firstSeen,
+                    lastSeen,
                     updatedAt: new Date(),
                 },
             });
