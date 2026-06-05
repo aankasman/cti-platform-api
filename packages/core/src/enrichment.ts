@@ -887,13 +887,62 @@ async function enrichShodan(value: string, type: IOCType): Promise<EnrichmentRes
 
     const apiKey = process.env.SHODAN_API_KEY;
     if (!apiKey) {
-        return {
-            source: 'shodan',
-            timestamp: new Date(),
-            success: false,
-            error: 'SHODAN_API_KEY not configured',
-            ttlSeconds: 86400,
-        };
+        // Free fallback — Shodan's InternetDB endpoint (no key required)
+        // returns a slimmer payload than the paid `/shodan/host/:ip` endpoint
+        // but covers the highest-signal fields: open ports, hostnames, tags,
+        // and known CVEs. Lets the platform surface SOMETHING useful for
+        // every IP IOC even when the operator hasn't registered for a key.
+        // Same `source: 'shodan'` envelope so the dashboard's Shodan section
+        // renders either payload uniformly.
+        try {
+            const r = await fetch(`https://internetdb.shodan.io/${value}`);
+            if (r.status === 404) {
+                return {
+                    source: 'shodan',
+                    timestamp: new Date(),
+                    success: true,
+                    data: { found: false, message: 'No Shodan data for this IP', via: 'internetdb' },
+                    ttlSeconds: 3600,
+                };
+            }
+            if (!r.ok) throw new Error(`InternetDB ${r.status}`);
+            const idb = await r.json() as {
+                ip?: string;
+                ports?: number[];
+                cpes?: string[];
+                hostnames?: string[];
+                tags?: string[];
+                vulns?: string[];
+            };
+            return {
+                source: 'shodan',
+                timestamp: new Date(),
+                success: true,
+                data: {
+                    found: true,
+                    via: 'internetdb',
+                    ip: idb.ip || value,
+                    ports: idb.ports || [],
+                    portCount: (idb.ports || []).length,
+                    vulns: idb.vulns || [],
+                    vulnCount: (idb.vulns || []).length,
+                    hostnames: idb.hostnames || [],
+                    tags: idb.tags || [],
+                    cpes: idb.cpes || [],
+                },
+                // InternetDB refreshes daily — match TTL to that cadence
+                // rather than the paid API's hourly so we don't beat on it.
+                ttlSeconds: 86400,
+            };
+        } catch (err: any) {
+            return {
+                source: 'shodan',
+                timestamp: new Date(),
+                success: false,
+                error: `InternetDB fallback failed: ${err.message}`,
+                ttlSeconds: 3600,
+            };
+        }
     }
 
     try {
@@ -949,6 +998,7 @@ async function enrichShodan(value: string, type: IOCType): Promise<EnrichmentRes
             success: true,
             data: {
                 found: true,
+                via: 'paid-api',
                 ip: data.ip_str,
                 ports: data.ports || [],
                 portCount: (data.ports || []).length,

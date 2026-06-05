@@ -42,7 +42,13 @@ export const enrichmentWorker = new Worker<EnrichmentJobData>(
         try {
             await job.updateProgress(10);
 
-            const enrichmentSources = (sources || ['virustotal', 'geoip']) as EnrichmentSource[];
+            // Default sources include `shodan` because the enricher now
+            // falls back to InternetDB (no key required) when SHODAN_API_KEY
+            // isn't set — so even fresh deploys get port + hostname + known-
+            // CVE context for every IP IOC, the same way they always got
+            // VirusTotal + GeoIP. Callers can override `sources` to be
+            // narrower if they want.
+            const enrichmentSources = (sources || ['virustotal', 'geoip', 'shodan']) as EnrichmentSource[];
 
             log.info('Enriching IOC', { iocType, iocValue, sources: enrichmentSources });
             await job.updateProgress(30);
