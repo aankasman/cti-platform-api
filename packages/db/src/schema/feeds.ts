@@ -115,7 +115,14 @@ export const pulses = pgTable('pulses', {
     // vendor write-ups, blog posts the analyst published with. Persisting
     // these gives the dashboard a "see also" link list instead of
     // forcing the analyst to bounce out to otx.alienvault.com.
-    references: text('references').array(),
+    //
+    // SQL column is `reference_urls` (not `references`) because
+    // `references` is a reserved keyword in PostgreSQL — using it forced
+    // every query to quote `"references"` and routinely caused
+    // `syntax error at or near "references"` when an analyst typed an
+    // ad-hoc query. The Drizzle JS property stays `references` so
+    // dashboard/API/worker code reads naturally. See migration 0042.
+    references: text('reference_urls').array(),
 
     // Metrics
     indicatorCount: integer('indicator_count'),
