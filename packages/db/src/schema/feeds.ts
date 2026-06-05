@@ -111,6 +111,11 @@ export const pulses = pgTable('pulses', {
     industries: text('industries').array(),
     malwareFamilies: text('malware_families').array(),
     attackIds: text('attack_ids').array(), // MITRE ATT&CK IDs
+    // OTX pulses include a `references` array of URLs — primary sources,
+    // vendor write-ups, blog posts the analyst published with. Persisting
+    // these gives the dashboard a "see also" link list instead of
+    // forcing the analyst to bounce out to otx.alienvault.com.
+    references: text('references').array(),
 
     // Metrics
     indicatorCount: integer('indicator_count'),
