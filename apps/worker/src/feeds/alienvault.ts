@@ -279,7 +279,17 @@ async function syncAlienVault(): Promise<SyncResult> {
                         industries: pulse.industries || [],
                         malwareFamilies: pulse.malware_families || [],
                         attackIds: pulse.attack_ids || [],
-                        indicatorCount: pulse.indicator_count || 0,
+                        // OTX's `indicator_count` on the list endpoint is a stale
+                        // self-report — it routinely arrives as `0` even when the
+                        // expanded pulse carries a full indicators array (the
+                        // "ClickFix Deno Abuse to CastleRAT" pulse hit this on
+                        // 2026-06-04: stored count=0, actual linked=15). When we
+                        // already have indicators in hand, count THOSE — that's
+                        // the number of IOC rows we're about to insert and link.
+                        // Fall back to OTX's claim only when the array hasn't been
+                        // fetched yet (e.g., metadata-only sync paths). `||`
+                        // intentionally — falsy 0 should fall through.
+                        indicatorCount: pulse.indicators?.length || pulse.indicator_count || 0,
                         subscriberCount: pulse.subscriber_count || 0,
                         otxCreated: pulse.created ? new Date(pulse.created) : null,
                         otxModified: pulse.modified ? new Date(pulse.modified) : null,
