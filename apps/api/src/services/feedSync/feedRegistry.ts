@@ -13,6 +13,7 @@ import { syncCveOrgFeed } from './cveOrgSync';
 import {
     syncAbuseSSLFeed, syncThreatFoxFeed, syncURLhausFeed,
     syncMalwareBazaarFeed, syncOpenPhishFeed, syncMITREFeed, syncMISPGalaxyFeed,
+    syncEPSSFeed,
 } from './additionalFeeds';
 
 export type FeedSyncOptions = { limit?: number; since?: string };
@@ -36,6 +37,10 @@ const FEED_REGISTRY: Record<string, FeedHandler> = {
     openphish: () => syncOpenPhishFeed(),
     mitre: () => syncMITREFeed(),
     mispgalaxy: () => syncMISPGalaxyFeed(),
+    // EPSS — FIRST.org's daily exploit-prediction score. Pairs with the
+    // CVE feeds above: NVD/CVE.org give us the CVEs, EPSS gives us
+    // "which of those is likely to be exploited in the next 30 days".
+    epss: () => syncEPSSFeed(),
 };
 
 /** Get the sync handler for a specific feed source. */

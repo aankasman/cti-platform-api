@@ -12,9 +12,11 @@ describe('Feed Registry', () => {
     // apps/api/src/services/feedSync/feedRegistry.ts. `cveorg` joined
     // as the primary CVE-disclosure feed (cvelistV5, fresh within
     // minutes of CNA disclosure); NVD remains as a CVSS-score fallback.
+    // `epss` joined as Phase 1's exploit-prediction enrichment.
     const EXPECTED_FEEDS = [
         'otx', 'cisa', 'cveorg', 'nvd', 'abusessl', 'threatfox',
         'urlhaus', 'malwarebazaar', 'openphish', 'mitre', 'mispgalaxy',
+        'epss',
     ];
 
     describe('getRegisteredFeeds', () => {
@@ -68,6 +70,7 @@ describe('Feed Registry', () => {
         it.each([
             'otx', 'cisa', 'nvd', 'abusessl', 'threatfox',
             'urlhaus', 'malwarebazaar', 'openphish', 'mitre', 'mispgalaxy',
+            'epss',
         ])('should return true for registered feed "%s"', async (source) => {
             const { isFeedRegistered } = await import('../services/feedSync/feedRegistry');
 

@@ -168,6 +168,18 @@ export const JOB_REGISTRY: ScheduledJobRegistration[] = [
         queue: feedSyncQueue,
         payload: { source: 'mispgalaxy' },
     },
+    {
+        key: 'epssSync',
+        jobId: 'scheduled-epss-sync',
+        name: 'epss-sync',
+        description: 'Sync EPSS exploit-prediction scores from FIRST.org',
+        // 06:00 UTC daily — gives FIRST.org's nightly publish window time
+        // to finish (they update ~00:00 UTC) and lands well after our
+        // CISA-KEV / NVD syncs so the freshest set of CVEs gets scored.
+        defaultCron: '0 6 * * *',
+        queue: feedSyncQueue,
+        payload: { source: 'epss' },
+    },
 
     // --- Maintenance ---------------------------------------------------
     {

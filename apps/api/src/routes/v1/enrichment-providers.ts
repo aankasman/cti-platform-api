@@ -22,7 +22,7 @@ router.use('*', requireAuth);
 const BUILT_IN_PROVIDERS: Record<string, { name: string; description: string; supportedTypes: string[]; requiresApiKey: boolean; docsUrl: string }> = {
     virustotal: { name: 'VirusTotal', description: 'Multi-AV scanning and threat intelligence', supportedTypes: ['ip', 'domain', 'url', 'hash'], requiresApiKey: true, docsUrl: 'https://docs.virustotal.com' },
     abuseipdb: { name: 'AbuseIPDB', description: 'IP address abuse reports and confidence scores', supportedTypes: ['ip'], requiresApiKey: true, docsUrl: 'https://docs.abuseipdb.com' },
-    shodan: { name: 'Shodan', description: 'Internet-wide scanning and device intelligence', supportedTypes: ['ip', 'domain'], requiresApiKey: true, docsUrl: 'https://developer.shodan.io' },
+    shodan: { name: 'Shodan', description: 'Internet-wide scanning and device intelligence (falls back to free InternetDB when no SHODAN_API_KEY is configured — slimmer payload but no setup required)', supportedTypes: ['ip', 'domain'], requiresApiKey: false, docsUrl: 'https://developer.shodan.io' },
     greynoise: { name: 'GreyNoise', description: 'Internet scanner identification and classification', supportedTypes: ['ip'], requiresApiKey: true, docsUrl: 'https://docs.greynoise.io' },
     urlhaus: { name: 'URLhaus', description: 'Malicious URL database', supportedTypes: ['url', 'domain'], requiresApiKey: false, docsUrl: 'https://urlhaus.abuse.ch/api' },
     threatfox: { name: 'ThreatFox', description: 'IOC sharing platform by abuse.ch', supportedTypes: ['ip', 'domain', 'hash', 'url'], requiresApiKey: false, docsUrl: 'https://threatfox.abuse.ch/api' },

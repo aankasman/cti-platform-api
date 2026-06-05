@@ -83,3 +83,15 @@ export async function syncMISPGalaxyFeed(): Promise<SyncResult> {
         return emptyResult(false, [(err as Error).message]);
     }
 }
+
+export async function syncEPSSFeed(): Promise<SyncResult> {
+    // @ts-ignore — worker scripts outside rootDir, resolved at runtime
+    const { syncEPSS } = await import('../../../../worker/src/feeds/epss');
+    return normalise(await syncEPSS().then((r: { matched: number; failed: number; errors: string[] }) =>
+        // EPSS reports `matched` (rows actually updated) as the meaningful
+        // count; map it onto the standard `processed` field so the rest
+        // of the pipeline (feed_sync_runs.items_ingested) reflects useful
+        // work done rather than "rows present in the upstream feed".
+        ({ processed: r.matched, failed: r.failed, errors: r.errors }),
+    ));
+}

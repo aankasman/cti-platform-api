@@ -59,6 +59,16 @@ export const vulnerabilities = pgTable('vulnerabilities', {
     exploitAddedDate: date('exploit_added_date'),
     dueDate: date('due_date'), // CISA remediation deadline
 
+    // EPSS — FIRST.org's daily exploit-prediction score.
+    //   epssScore      ∈ [0, 1] — probability of exploitation in the next 30 days
+    //   epssPercentile ∈ [0, 1] — score's rank vs the entire CVE corpus
+    // Both nullable: every CVE present in the EPSS feed gets values, but
+    // brand-new CVEs (and CVEs we ingest from sources EPSS hasn't scored
+    // yet) stay null until the daily refresh.
+    epssScore: numeric('epss_score', { precision: 6, scale: 5 }),
+    epssPercentile: numeric('epss_percentile', { precision: 6, scale: 5 }),
+    epssUpdatedAt: timestamp('epss_updated_at', { withTimezone: true }),
+
     // Affected products
     vendorProject: text('vendor_project'),
     product: text('product'),
@@ -77,6 +87,10 @@ export const vulnerabilities = pgTable('vulnerabilities', {
     cveIdIdx: index('vulnerabilities_cve_id_idx').on(table.cveId),
     severityIdx: index('vulnerabilities_severity_idx').on(table.severity),
     isExploitedIdx: index('vulnerabilities_is_exploited_idx').on(table.isExploited),
+    // EPSS is a common filter ("X critical with EPSS >= 0.7") so a btree
+    // index pays back; partial index since most analyst queries are
+    // "score >= some threshold" not "score IS NULL".
+    epssScoreIdx: index('vulnerabilities_epss_score_idx').on(table.epssScore),
 }));
 
 // =============================================================================

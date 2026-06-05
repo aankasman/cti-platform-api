@@ -24,6 +24,13 @@ export interface LandscapeVulnStat {
     total: number;
     critical: number;
     high: number;
+    /**
+     * CVEs in the period that are also on CISA's Known Exploited
+     * Vulnerabilities catalog. Drives the "X KEV" stat on the Vulnerabilities
+     * KPI tile and answers the analyst's "X critical with active exploitation"
+     * question without a second round-trip.
+     */
+    inKev: number;
 }
 
 export interface LandscapeNotifStat {
@@ -74,6 +81,7 @@ export function toLandscapeOverview(input: {
             total:    toCount(vulns.total),
             critical: toCount(vulns.critical),
             high:     toCount(vulns.high),
+            inKev:    toCount(vulns.in_kev),
         },
         notifications: {
             total: toCount(notifs.total),

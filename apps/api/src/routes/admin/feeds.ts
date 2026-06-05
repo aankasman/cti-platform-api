@@ -33,6 +33,7 @@ const FEED_REGISTRY_TO_SOURCE: Record<string, string> = {
     openphishSync:      'openphish',
     mitreSync:          'mitre',
     mispGalaxySync:     'mispgalaxy',
+    epssSync:           'epss',
 };
 
 /** GET /admin/feeds — feed-centric view (every entry that has a feed_sync_runs source). */
