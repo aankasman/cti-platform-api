@@ -5,8 +5,7 @@
  * falls back to OpenSearch (where IOCs may live exclusively).
  */
 
-import { db, sql } from '@rinjani/db';
-import type { RawQueryResult } from '@rinjani/db';
+import { db, sql, rawQuery } from '@rinjani/db';
 import { iocs } from '@rinjani/db/schema';
 import { getNeo4jDriver } from '../driver';
 import { createLogger } from '../../../lib/logger';
@@ -19,8 +18,20 @@ export async function syncAllIOCs(
 ): Promise<number> {
     log.info('Starting ALL IOCs sync');
 
-    const countResult = await db.execute(sql`SELECT COUNT(*) as total FROM ${iocs}`) as unknown as RawQueryResult;
-    const totalIOCs = Number(countResult.rows?.[0]?.total || 0);
+    // Use `rawQuery()` (not raw `db.execute()`): postgres-js returns the
+    // result as an array directly, while pg-style drivers wrap with
+    // `{ rows: [...] }`. `rawQuery()` normalises both. The previous code
+    // assumed `{ rows: [...] }` against postgres-js — `countResult.rows`
+    // was always undefined, so `totalIOCs` resolved to 0 via `|| 0`,
+    // sending every sync down the OpenSearch fallback path (which caps
+    // at ~10k indexed docs). Result on 2026-06-05: 249k IOCs in Postgres,
+    // only 60k landed in Neo4j after the full backfill — the difference
+    // was IOCs that were in Postgres but not yet indexed to OpenSearch.
+    const countResult = await rawQuery<{ total: string | number }>(
+        sql`SELECT COUNT(*) AS total FROM ${iocs}`,
+    );
+    const totalIOCs = Number(countResult.rows[0]?.total ?? 0);
+    log.info('PG IOC count', { totalIOCs });
 
     if (totalIOCs > 0) {
         return syncFromPostgres(totalIOCs, batchSize, onProgress);
