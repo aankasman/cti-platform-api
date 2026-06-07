@@ -20,7 +20,7 @@
  */
 
 import type { Queue } from 'bullmq';
-import { feedSyncQueue, cveEnrichmentQueue, maintenanceQueue } from './index';
+import { feedSyncQueue, cveEnrichmentQueue, maintenanceQueue, neo4jSyncQueue } from './index';
 import { createLogger } from '../lib/logger';
 import {
     getOverride,
@@ -179,6 +179,28 @@ export const JOB_REGISTRY: ScheduledJobRegistration[] = [
         defaultCron: '0 6 * * *',
         queue: feedSyncQueue,
         payload: { source: 'epss' },
+    },
+
+    // --- Graph sync ----------------------------------------------------
+    {
+        key: 'neo4jFullSync',
+        jobId: 'scheduled-neo4j-full-sync',
+        name: 'neo4j-sync-full',
+        description: 'Full Postgres → Neo4j graph rebuild (actors, techniques, malware, tools, relationships, pulses + IOCs, CVEs, similarity)',
+        // 07:30 UTC daily — lands after the 06:00 EPSS sync finishes and
+        // before the day's first analyst surfaces. The orchestrator runs
+        // ~8 minutes on prod-scale data (74k nodes / 30k edges in the
+        // 2026-06-05 backfill); a daily cadence keeps the graph fresh
+        // without burning Neo4j into a write loop.
+        //
+        // Without this scheduled rebuild Neo4j drifts: the initial
+        // populate is manual via /admin/jobs/neo4j-sync, and Postgres
+        // grew from 37k → 249k IOCs without the graph ever catching up.
+        // Discovered 2026-06-05 when /graph?q=... returned 0 nodes for
+        // IOCs that were definitely in Postgres.
+        defaultCron: '30 7 * * *',
+        queue: neo4jSyncQueue,
+        payload: { syncType: 'full' },
     },
 
     // --- Maintenance ---------------------------------------------------
