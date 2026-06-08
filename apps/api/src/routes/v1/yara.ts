@@ -8,16 +8,17 @@
  *   POST /v1/yara/rules         → Add a new rule
  *   POST /v1/yara/scan          → Scan a value against all rules
  *   POST /v1/yara/batch-scan    → Scan multiple values
+ *   POST /v1/yara/scan-sample   → Scan an uploaded file (multipart/form-data, ≤25 MiB)
  *   PUT  /v1/yara/rules/:name/toggle → Toggle rule enabled/disabled
  *   DELETE /v1/yara/rules/:name → Remove a rule
  */
 
 import { Hono } from 'hono';
 import { requireAuth, requireRole } from '../../middleware/auth';
-import { NotFoundError } from '../../lib/errors';
+import { NotFoundError, ValidationError } from '../../lib/errors';
 import {
     listRules, getRule, addRule, removeRule, toggleRule,
-    scanValue, batchScan,
+    scanValue, batchScan, scanBytes,
 } from '../../services/yaraEngine';
 import {
     AddYaraRuleSchema, ToggleYaraRuleSchema, YaraScanSchema, YaraBatchScanSchema,
@@ -68,7 +69,7 @@ router.post('/yara/rules', requireAuth, requireRole('admin'), async (c) => {
         createdAt: new Date().toISOString(),
     };
 
-    addRule(rule);
+    await addRule(rule);
     return c.json({ success: true, data: rule }, 201);
 });
 
@@ -78,7 +79,7 @@ router.put('/yara/rules/:name/toggle', requireAuth, requireRole('admin'), async 
     const name = c.req.param('name')!; // route-guaranteed by :name pattern
     const { enabled } = ToggleYaraRuleSchema.parse(await c.req.json());
 
-    const success = toggleRule(name, enabled);
+    const success = await toggleRule(name, enabled);
     if (!success) {
         throw new NotFoundError('YARA rule', name);
     }
@@ -88,9 +89,9 @@ router.put('/yara/rules/:name/toggle', requireAuth, requireRole('admin'), async 
 
 // ── Delete rule ─────────────────────────────────────────────────────
 
-router.delete('/yara/rules/:name', requireAuth, requireRole('admin'), (c) => {
+router.delete('/yara/rules/:name', requireAuth, requireRole('admin'), async (c) => {
     const name = c.req.param('name')!; // route-guaranteed by :name pattern
-    const deleted = removeRule(name);
+    const deleted = await removeRule(name);
 
     if (!deleted) {
         throw new NotFoundError('YARA rule', name);
@@ -114,6 +115,57 @@ router.post('/yara/batch-scan', requireAuth, async (c) => {
 
     const result = batchScan(values);
     return c.json({ success: true, data: result });
+});
+
+// ── Scan uploaded sample ────────────────────────────────────────────
+// Accepts multipart/form-data with a single `file` field, OR a raw body
+// (application/octet-stream). Caps the sample at 25 MiB; hash patterns
+// and text patterns scan against the raw bytes via latin1 decoding.
+
+const SAMPLE_MAX_BYTES = 25 * 1024 * 1024;
+
+router.post('/yara/scan-sample', requireAuth, async (c) => {
+    const ct = c.req.header('content-type') || '';
+    let buf: Buffer;
+    let filename: string | null = null;
+
+    try {
+        if (ct.startsWith('multipart/form-data')) {
+            const form = await c.req.parseBody({ all: false });
+            const file = form.file;
+            if (!file || !(file instanceof File)) {
+                throw new ValidationError('multipart upload missing `file` field');
+            }
+            if (file.size > SAMPLE_MAX_BYTES) {
+                throw new ValidationError(`sample exceeds ${SAMPLE_MAX_BYTES} byte limit`);
+            }
+            buf = Buffer.from(await file.arrayBuffer());
+            filename = file.name || null;
+        } else {
+            const ab = await c.req.arrayBuffer();
+            if (ab.byteLength === 0) {
+                throw new ValidationError('empty sample body — POST a binary file or multipart upload');
+            }
+            buf = Buffer.from(ab);
+        }
+    } catch (err) {
+        if (err instanceof ValidationError) throw err;
+        throw new ValidationError(`failed to read sample: ${(err as Error).message}`);
+    }
+
+    if (buf.length > SAMPLE_MAX_BYTES) {
+        throw new ValidationError(`sample exceeds ${SAMPLE_MAX_BYTES} byte limit`);
+    }
+
+    const result = scanBytes(buf);
+    return c.json({
+        success: true,
+        data: {
+            ...result,
+            input: filename ?? `<binary:${buf.length} bytes>`,
+            sample: { filename, sizeBytes: buf.length },
+        },
+    });
 });
 
 export default router;
