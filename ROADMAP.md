@@ -119,7 +119,7 @@ Pluggable enricher pattern — runs on ingest *and* on-demand via API.
 
 ## Phase 2 · STIX 2.1 first-class & Federation
 
-**Target window: 2026-08 → 2026-09**  ·  **Status: ⚪ Planned**
+**Target window: 2026-08 → 2026-09**  ·  **Status: 🟡 In flight** (1 of 5 items shipped — provenance/TLP wired into export 2026-06-08)
 
 We speak TAXII but the internal model is still IOC-centric. STIX as
 source of truth opens up federation between Rinjani instances and with
@@ -133,7 +133,18 @@ MISP / OpenCTI / vendor stacks.
 - ⚪ Bundle import/export (JSON + `bundle.tar`)
 - ⚪ **TAXII 2.1 push** (we currently only pull) — enables federation
   between two Rinjani instances, or pushing into MISP
-- ⚪ Confidence + TLP marking propagation through relationships
+- 🟢 **Confidence + TLP marking propagation**
+  (shipped 2026-06-08: `stixProvenance.ts` moved to `@rinjani/core/stixProvenance`
+  and wired into the export pipeline. Every emitted `indicator`, `threat-actor`,
+  and `vulnerability` now carries `created_by_ref`, `object_marking_refs`,
+  `confidence` (0-100), and the custom `extension-definition--provenance`
+  block with merge history + data-quality scoring. Per-source TLP defaults
+  map known feeds to sensible markings (alienvault → WHITE,
+  virustotal → GREEN, misp → AMBER); operator can override per-bundle
+  via `STIXExportOptions.defaultTlp`. The bundle now also emits the
+  referenced identity + marking-definition SDOs as required by STIX 2.1.
+  Hop-based TLP propagation through the `relationships` graph is the
+  follow-up that closes this fully.)
 
 > **Differentiator we're leaning into**: graph-native attribution.
 > *"Everything attributed to this intrusion set through any path
