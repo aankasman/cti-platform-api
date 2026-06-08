@@ -66,8 +66,17 @@ export async function syncMITREFeed(): Promise<SyncResult> {
     try {
         // @ts-ignore
         const { syncMitreAttack } = await import('../../../../worker/src/feeds/mitre');
-        await syncMitreAttack();
-        return emptyResult(true);
+        const r = await syncMitreAttack() as
+            | { actors?: number; techniques?: number; tactics?: number; malware?: number; tools?: number; relationships?: number }
+            | undefined;
+        // MITRE writes to half a dozen tables (threat_actors + techniques +
+        // tactics + malware + tools + relationships) per sync. Sum the
+        // per-table counts so feed_sync_runs.items_ingested reflects
+        // actual rows written (footgun #15) instead of always 0.
+        const total = r
+            ? (r.actors ?? 0) + (r.techniques ?? 0) + (r.tactics ?? 0) + (r.malware ?? 0) + (r.tools ?? 0) + (r.relationships ?? 0)
+            : 0;
+        return { ...emptyResult(true), totalRowsAffected: total };
     } catch (err) {
         return emptyResult(false, [(err as Error).message]);
     }
@@ -77,8 +86,19 @@ export async function syncMISPGalaxyFeed(): Promise<SyncResult> {
     try {
         // @ts-ignore
         const { runMISPGalaxySync } = await import('../../../../worker/src/feeds/misp-galaxy');
-        await runMISPGalaxySync();
-        return emptyResult(true);
+        const r = await runMISPGalaxySync() as
+            | { threatActors?: number; malware?: number; generic?: number; sigma?: number }
+            | undefined;
+        // MISP Galaxy writes to threat_actors + malware + galaxy_clusters
+        // (called `generic` in the worker's return shape) + detection_rules
+        // (sigma). On 2026-06-02 the prod sync added 9,735 galaxy_cluster
+        // rows but the dashboard reported "0 items" because the headline
+        // counter only tracked IOCs. This sums all four so the operator
+        // sees the truth.
+        const total = r
+            ? (r.threatActors ?? 0) + (r.malware ?? 0) + (r.generic ?? 0) + (r.sigma ?? 0)
+            : 0;
+        return { ...emptyResult(true), totalRowsAffected: total };
     } catch (err) {
         return emptyResult(false, [(err as Error).message]);
     }
