@@ -58,3 +58,6 @@ export * from './scheduledJobOverrides';
 
 // Per-run feed-sync audit trail (recordFeedSyncRun / getFeedSyncHistory)
 export * from './feedSyncRuns';
+
+// Outbound TAXII 2.1 push targets (Phase 2 federation)
+export * from './taxiiRemoteTargets';

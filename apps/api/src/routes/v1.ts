@@ -35,6 +35,7 @@ import batchRoutes from './v1/batch';
 import stixPipeline from './v1/stixPipeline';
 import yaraRoutes from './v1/yara';
 import sigmaRoutes from './v1/sigma';
+import taxiiPushRoutes from './v1/taxiiPush';
 import taxonomyRoutes from './v1/taxonomies';
 import exportEnhancedRoutes from './v1/exportEnhanced';
 import caseRoutes from './v1/cases';
@@ -138,6 +139,7 @@ v1.route('/', batchRoutes);                  // Batch operations (bulk update/de
 v1.route('/', stixPipeline);                 // STIX 2.1 import/export/validate
 v1.route('/', yaraRoutes);                   // YARA rule matching engine
 v1.route('/', sigmaRoutes);                  // Sigma rule library (/sigma/*)
+v1.route('/', taxiiPushRoutes);              // Outbound TAXII push (/taxii/remote-targets/*)
 v1.route('/', taxonomyRoutes);               // Taxonomy & tag namespace system
 v1.route('/', exportEnhancedRoutes);         // Enhanced export (MISP, Suricata, reports)
 v1.route('/', caseRoutes);                   // Case / investigation management
