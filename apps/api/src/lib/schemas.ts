@@ -406,6 +406,16 @@ export const SigmaListSchema = z.object({
 });
 export type SigmaListFilters = z.infer<typeof SigmaListSchema>;
 
+// ── Phase 3 #2 — Actor activity summary ────────────────────────────
+
+/** GET|POST /v1/threat-actors/:id/summary — LLM-backed activity briefing */
+export const ActorSummarySchema = z.object({
+    days: z.coerce.number().int().min(1).max(365).default(30),
+    context: z.string().max(200).optional(),
+    provider: z.enum(['gemini', 'openrouter', 'ollama']).optional(),
+});
+export type ActorSummary = z.infer<typeof ActorSummarySchema>;
+
 // ── TAXII push targets ──────────────────────────────────────────────
 
 /** POST /v1/taxii/remote-targets — register a new outbound TAXII target */

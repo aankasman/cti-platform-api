@@ -183,7 +183,7 @@ MISP / OpenCTI / vendor stacks.
 
 ## Phase 3 · LLM analyst features
 
-**Target window: 2026-10 → 2026-11**  ·  **Status: 🟡 In flight** (1 of 5 items shipped — embedding similarity backend is already in master pre-Phase-3; the dashboard-side "similar to" sidebars are the remaining work and live in the dashboard repo, not here.)
+**Target window: 2026-10 → 2026-11**  ·  **Status: 🟡 In flight** (2 of 5 items shipped — embedding similarity backend (pre-Phase-3) + actor activity summarisation shipped 2026-06-08)
 
 Provider abstraction (Gemini / OpenRouter / Ollama) already exists. This
 phase wires it into the analyst workflow, deliberately scoped to specific
@@ -191,8 +191,15 @@ surfaces rather than a generic chat widget.
 
 - ⚪ **Report ingestion** — paste a PDF or URL; extract IOCs + TTPs +
   actors into STIX entities for review
-- ⚪ **Auto-summarisation** — *"summarise the last 30 days of this
-  actor's activity"* panel on actor pages
+- 🟢 **Actor activity auto-summarisation**
+  (shipped 2026-06-08: `GET|POST /v1/threat-actors/:id/summary?days=30`
+  reads the actor row + recent relationships, outgoing-edge distribution,
+  top malware/tools, recent campaigns, and recent IOCs in a configurable
+  lookback window. The activity block feeds a strict RAG prompt that
+  explicitly forbids hallucinating IOCs / campaign names / malware that
+  aren't in the data. Returns markdown plus a structured `activity` block
+  so the UI can show "based on N IOCs + M campaigns". Provider
+  override (`gemini` | `openrouter` | `ollama`) supported per call.)
 - 🟢 **Embedding similarity** — *"have we seen this before"* loop
   (backend already in master pre-Phase-3: `POST /v1/search/vector` runs
   k-NN against OpenSearch's `knn_vector` index, `GET /v1/search/similar/:docId`
