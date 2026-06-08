@@ -405,6 +405,35 @@ export const SigmaListSchema = z.object({
 });
 export type SigmaListFilters = z.infer<typeof SigmaListSchema>;
 
+// ── TAXII push targets ──────────────────────────────────────────────
+
+/** POST /v1/taxii/remote-targets — register a new outbound TAXII target */
+export const TaxiiRemoteTargetCreateSchema = z.object({
+    name: z.string().min(1, 'name is required').max(255),
+    discoveryUrl: z.string().url('discoveryUrl must be http(s)://...'),
+    apiRoot: z.string().url('apiRoot must be http(s)://...'),
+    collectionId: z.string().min(1, 'collectionId is required').max(255),
+    apiKeyRef: z.string().max(255).optional(),
+    enabled: z.boolean().default(true),
+    pushFilter: z.object({
+        iocType: z.string().max(50).optional(),
+        iocSource: z.string().max(100).optional(),
+        severity: z.string().max(20).optional(),
+        iocLimit: z.number().int().min(1).max(50_000).optional(),
+        threatActorLimit: z.number().int().min(0).max(10_000).optional(),
+        vulnerabilityLimit: z.number().int().min(0).max(50_000).optional(),
+        defaultTlp: z.enum(['white', 'green', 'amber', 'red']).optional(),
+        includeIOCs: z.boolean().optional(),
+        includeThreatActors: z.boolean().optional(),
+        includeVulnerabilities: z.boolean().optional(),
+    }).default({}),
+});
+export type TaxiiRemoteTargetCreate = z.infer<typeof TaxiiRemoteTargetCreateSchema>;
+
+/** PUT /v1/taxii/remote-targets/:id — partial update */
+export const TaxiiRemoteTargetUpdateSchema = TaxiiRemoteTargetCreateSchema.partial();
+export type TaxiiRemoteTargetUpdate = z.infer<typeof TaxiiRemoteTargetUpdateSchema>;
+
 // ── Playbook execute schema ─────────────────────────────────────────
 
 /** POST /v1/playbooks/:id/execute — manually trigger execution */

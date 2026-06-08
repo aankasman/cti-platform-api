@@ -119,7 +119,7 @@ Pluggable enricher pattern — runs on ingest *and* on-demand via API.
 
 ## Phase 2 · STIX 2.1 first-class & Federation
 
-**Target window: 2026-08 → 2026-09**  ·  **Status: 🟡 In flight** (2 of 5 items shipped — provenance/TLP wired into export + bundle import expanded to 7 SDO types incl. malware + relationships, shipped 2026-06-08)
+**Target window: 2026-08 → 2026-09**  ·  **Status: 🟡 In flight** (3 of 5 items shipped — provenance/TLP wired into export + bundle import expanded to 7 SDO types incl. malware + relationships + outbound TAXII 2.1 push client, all shipped 2026-06-08)
 
 We speak TAXII but the internal model is still IOC-centric. STIX as
 source of truth opens up federation between Rinjani instances and with
@@ -140,8 +140,15 @@ MISP / OpenCTI / vendor stacks.
   `infrastructure`, `note`, `opinion` are bucketed into `skippedTypes`
   for visibility — they need entity tables (item 1) before they can be
   imported.)
-- ⚪ **TAXII 2.1 push** (we currently only pull) — enables federation
-  between two Rinjani instances, or pushing into MISP
+- 🟢 **TAXII 2.1 push client**
+  (shipped 2026-06-08: new `taxii_remote_targets` table + REST CRUD at
+  `/v1/taxii/remote-targets/*`, plus `POST /v1/taxii/remote-targets/:id/push`
+  for one-shot pushes and `POST /v1/taxii/push-all` for the fan-out. Per-target
+  filter mirrors `STIXExportOptions`, so each remote can subscribe to a
+  different slice — e.g. "TLP:GREEN urlhaus + threatfox IOCs only, no
+  threat-actors". Bearer token resolves from `config_api_keys.id` or
+  the `TAXII_PUSH_API_KEY` env var. Last-push status persists on the
+  target row.)
 - 🟢 **Confidence + TLP marking propagation**
   (shipped 2026-06-08: `stixProvenance.ts` moved to `@rinjani/core/stixProvenance`
   and wired into the export pipeline. Every emitted `indicator`, `threat-actor`,
