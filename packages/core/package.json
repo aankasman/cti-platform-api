@@ -17,7 +17,8 @@
         "./stixProvenance": "./src/stixProvenance.ts",
         "./stixVocab": "./src/stixVocab.ts",
         "./siemFormatters": "./src/siemFormatters.ts",
-        "./blocklistFormatters": "./src/blocklistFormatters.ts"
+        "./blocklistFormatters": "./src/blocklistFormatters.ts",
+        "./playbookDsl": "./src/playbookDsl.ts"
     },
     "scripts": {
         "build": "tsc",
