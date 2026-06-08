@@ -119,7 +119,7 @@ Pluggable enricher pattern — runs on ingest *and* on-demand via API.
 
 ## Phase 2 · STIX 2.1 first-class & Federation
 
-**Target window: 2026-08 → 2026-09**  ·  **Status: 🟡 In flight** (3 of 5 items shipped — provenance/TLP wired into export + bundle import expanded to 7 SDO types incl. malware + relationships + outbound TAXII 2.1 push client, all shipped 2026-06-08)
+**Target window: 2026-08 → 2026-09**  ·  **Status: 🟡 In flight** (4 of 5 items shipped — provenance/TLP + bundle import expansion + outbound TAXII push 2026-06-08 AM; relationship_type CHECK constraint + Neo4j auto-hydrate on `/v1/relationships` INSERT 2026-06-08 PM)
 
 We speak TAXII but the internal model is still IOC-centric. STIX as
 source of truth opens up federation between Rinjani instances and with
@@ -128,8 +128,17 @@ MISP / OpenCTI / vendor stacks.
 - ⚪ Full STIX 2.1 entity CRUD: `intrusion-set`, `campaign`, `malware`,
   `tool`, `course-of-action`, `attack-pattern`, `vulnerability`,
   `infrastructure`, `note`, `opinion`
-- ⚪ Typed relationships (`uses`, `targets`, `attributed-to`,
-  `mitigates`, `derived-from`) — Neo4j is already wired for this
+- 🟢 **Typed relationships + Neo4j auto-hydration**
+  (shipped 2026-06-08: `relationship_type` now constrained to the STIX 2.1
+  §5.7 SRO common vocab + project-specific extensions via DB CHECK
+  constraint (migration 0045) and a Zod enum on `POST /v1/relationships`.
+  The user-facing route fires `autoHydrateRelationship()` on INSERT —
+  a side-effect that MERGEs the matching Cypher edge in Neo4j. Mismatched
+  labels, missing nodes, or driver failures are logged but never block
+  the SQL write. Existing shortest-path endpoint at
+  `findShortestPath(from, to, maxDepth)` now sees a fully-hydrated graph
+  for user-created edges. The STIX-bundle importer's relationship pass
+  is the follow-up to close out hydration symmetry.)
 - 🟡 **Bundle import/export** — JSON works both ways; `.tar` packing still
   pending.
   (shipped 2026-06-08: import expanded from 3 SDO types to 7 — adds

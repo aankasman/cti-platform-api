@@ -172,3 +172,101 @@ export async function syncRelationships(): Promise<number> {
         await session.close();
     }
 }
+
+// ============================================================================
+// Auto-hydrate hook — single-relationship side-effect on INSERT
+// ============================================================================
+
+/**
+ * Map our relational `source_type` / `target_type` strings to the Neo4j node
+ * labels we maintain in `syncAll`. STIX-style hyphenated forms come from the
+ * STIX importer; underscore forms come from the user-facing /v1/relationships
+ * route. Both are normalised here.
+ */
+const NEO4J_LABEL_BY_ENTITY: Record<string, string> = {
+    'threat-actor': 'Actor',
+    'threat_actor': 'Actor',
+    'intrusion-set': 'Actor',
+    'attack-pattern': 'Technique',
+    technique: 'Technique',
+    malware: 'Malware',
+    tool: 'Tool',
+    vulnerability: 'Vulnerability',
+    cve: 'Vulnerability',
+    ioc: 'IOC',
+    indicator: 'IOC',
+    campaign: 'Campaign',
+    'course-of-action': 'Mitigation',
+    mitigation: 'Mitigation',
+    infrastructure: 'Infrastructure',
+};
+
+/**
+ * Map our `relationship_type` string to the Cypher edge label we want.
+ * Cypher rel-types can't contain hyphens, so kebab-case becomes
+ * SCREAMING_SNAKE. Unknown types fall back to RELATED_TO (the STIX 2.1
+ * generic).
+ */
+function cypherEdgeLabel(relationshipType: string): string {
+    return relationshipType.toUpperCase().replace(/-/g, '_');
+}
+
+export interface AutoHydrateRow {
+    sourceType: string;
+    sourceId: string;
+    relationshipType: string;
+    targetType: string;
+    targetId: string;
+    description?: string | null;
+    confidence?: number | null;
+}
+
+/**
+ * Side-effect for "we just wrote a row into the relationships table".
+ * Looks up matching Neo4j nodes by `mitreId`-or-id, then MERGEs the typed
+ * edge. Failures are logged and swallowed — Neo4j MUST NOT be on the
+ * critical path of the API write.
+ *
+ * Idempotent (MERGE).
+ */
+export async function autoHydrateRelationship(row: AutoHydrateRow): Promise<void> {
+    const srcLabel = NEO4J_LABEL_BY_ENTITY[row.sourceType.toLowerCase()];
+    const tgtLabel = NEO4J_LABEL_BY_ENTITY[row.targetType.toLowerCase()];
+    if (!srcLabel || !tgtLabel) {
+        log.debug('autoHydrate skipped — unknown label', { sourceType: row.sourceType, targetType: row.targetType });
+        return;
+    }
+
+    let driver;
+    try {
+        driver = getNeo4jDriver();
+    } catch (err) {
+        log.debug('autoHydrate skipped — Neo4j driver unavailable', { error: (err as Error).message });
+        return;
+    }
+
+    const session = driver.session();
+    try {
+        const edge = cypherEdgeLabel(row.relationshipType);
+        // Match either by mitreId (G0094, T1059, S0139) or by uuid/string id.
+        // Cypher labels can't be parameterised; the labels + edge name come
+        // from a closed allowlist above, so string interpolation is safe.
+        await session.run(`
+            MATCH (src:${srcLabel}) WHERE src.mitreId = $srcId OR src.id = $srcId OR src.uuid = $srcId
+            MATCH (tgt:${tgtLabel}) WHERE tgt.mitreId = $tgtId OR tgt.id = $tgtId OR tgt.uuid = $tgtId
+            MERGE (src)-[r:${edge}]->(tgt)
+            SET r.description = coalesce($desc, ''),
+                r.confidence = $confidence,
+                r.syncedAt = datetime()
+        `, {
+            srcId: row.sourceId,
+            tgtId: row.targetId,
+            desc: row.description ?? null,
+            confidence: row.confidence ?? null,
+        });
+    } catch (err) {
+        log.warn('autoHydrate Neo4j upsert failed', { error: (err as Error).message, srcLabel, tgtLabel, rel: row.relationshipType });
+    } finally {
+        await session.close();
+    }
+}

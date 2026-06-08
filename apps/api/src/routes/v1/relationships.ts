@@ -16,6 +16,7 @@ import {
     CreateRelationshipSchema, BulkRelationshipSchema,
     RelationshipFilterSchema,
 } from '../../lib/schemas';
+import { autoHydrateRelationship } from '../../services/neo4j/syncRelationships';
 
 const log = createLogger('Relationships');
 const router = new Hono();
@@ -51,6 +52,16 @@ router.post('/relationships', requireRole('admin', 'analyst'), async (c) => {
             confidence = EXCLUDED.confidence, description = EXCLUDED.description
         RETURNING *
     `));
+    // Fire-and-forget Neo4j mirror; never block the API response on graph.
+    autoHydrateRelationship({
+        sourceType: body.sourceType,
+        sourceId: body.sourceId,
+        relationshipType: body.relationshipType,
+        targetType: body.targetType,
+        targetId: body.targetId,
+        description: body.description,
+        confidence: body.confidence,
+    }).catch((err) => log.warn('post-INSERT Neo4j hydrate failed', { error: (err as Error).message }));
     return c.json({ success: true, data: result.rows?.[0] }, 201);
 });
 
@@ -118,6 +129,7 @@ router.post('/relationships/bulk', requireRole('admin', 'analyst'), async (c) =>
     const body = BulkRelationshipSchema.parse(await c.req.json().catch(() => ({})));
     const userId = c.get('user')?.id || 'unknown';
     let created = 0;
+    const hydratable: typeof body.relationships = [];
     for (const rel of body.relationships) {
         try {
             await rawQuery(sql.raw(`
@@ -129,10 +141,23 @@ router.post('/relationships/bulk', requireRole('admin', 'analyst'), async (c) =>
                     confidence = EXCLUDED.confidence, description = EXCLUDED.description
             `));
             created++;
+            hydratable.push(rel);
         } catch (err) {
             log.warn('Bulk relationship insert error', { error: (err as Error).message });
         }
     }
+    // Fire-and-forget Neo4j hydration for everything that landed.
+    Promise.allSettled(
+        hydratable.map((rel) => autoHydrateRelationship({
+            sourceType: rel.sourceType,
+            sourceId: rel.sourceId,
+            relationshipType: rel.relationshipType,
+            targetType: rel.targetType,
+            targetId: rel.targetId,
+            description: rel.description,
+            confidence: rel.confidence,
+        })),
+    ).catch((err) => log.warn('bulk post-INSERT Neo4j hydrate failed', { error: (err as Error).message }));
     return c.json({ success: true, data: { requested: body.relationships.length, created } });
 });
 

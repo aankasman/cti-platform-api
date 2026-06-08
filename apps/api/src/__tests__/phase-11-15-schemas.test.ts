@@ -87,9 +87,13 @@ describe('CreateRelationshipSchema', () => {
             sourceType: 'ioc', sourceId: 'a', targetType: 'ioc', targetId: 'b', relationshipType: 'invalid',
         })).toThrow();
     });
-    it('accepts all 10 relationship types', () => {
-        const types = ['related-to', 'derived-from', 'duplicate-of', 'communicates-with',
-            'drops', 'uses', 'targets', 'indicates', 'mitigates', 'attributed-to'];
+    it('accepts every STIX 2.1 SRO common relationship type', () => {
+        // Vocab moved to @rinjani/core/stixVocab (Phase 2 #2). Kept this
+        // test honest by walking a representative subset; the
+        // stix-vocab.test.ts file locks the full list.
+        const types = ['related-to', 'derived-from', 'communicates-with',
+            'drops', 'uses', 'targets', 'indicates', 'mitigates', 'attributed-to',
+            'exploits', 'controls', 'beacons-to'];
         for (const t of types) {
             expect(CreateRelationshipSchema.parse({
                 sourceType: 'ioc', sourceId: 'a', targetType: 'ioc', targetId: 'b', relationshipType: t,
