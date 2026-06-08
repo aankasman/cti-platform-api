@@ -476,6 +476,8 @@ services:
       - SHODAN_API_KEY=${SHODAN_API_KEY:-}
       - IPINFO_API_KEY=${IPINFO_API_KEY:-}
       - ZOOMEYE_API_KEY=${ZOOMEYE_API_KEY:-}
+      - URLSCAN_API_KEY=${URLSCAN_API_KEY:-}
+      - GREYNOISE_API_KEY=${GREYNOISE_API_KEY:-}
       # ── Feed API Keys ──
       # These keys also have to live in this block (not just v3-worker)
       # because BullMQ-dispatched "Run now" feed-sync jobs are processed
@@ -567,6 +569,8 @@ services:
       - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY:-}
       - SHODAN_API_KEY=${SHODAN_API_KEY:-}
       - IPINFO_API_KEY=${IPINFO_API_KEY:-}
+      - URLSCAN_API_KEY=${URLSCAN_API_KEY:-}
+      - GREYNOISE_API_KEY=${GREYNOISE_API_KEY:-}
       # ── Feed Sync API Keys ──
       - ALIENVAULT_API_KEY=${ALIENVAULT_API_KEY:-}
       # abuse.ch issues ONE auth key for ThreatFox + URLhaus +

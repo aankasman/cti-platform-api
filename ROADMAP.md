@@ -34,7 +34,7 @@ Last reviewed: **2026-06-05**.
 
 ## Phase 1 · Enrichment & Detection-as-Code
 
-**Target window: 2026-06 → 2026-07**  ·  **Status: 🟡 In flight** (5 of 11 items shipped — VirusTotal v3 + AbuseIPDB already in master since pre-Phase-1; EPSS, Shodan, inKev shipped 2026-06-05)
+**Target window: 2026-06 → 2026-07**  ·  **Status: 🟡 In flight** (7 of 11 items shipped — VirusTotal v3 + AbuseIPDB already in master since pre-Phase-1; EPSS, Shodan, inKev shipped 2026-06-05; urlscan.io + GreyNoise shipped 2026-06-08)
 
 The highest-leverage phase: every enricher we add makes existing
 dashboard cards more decision-useful, with near-zero schema churn.
@@ -43,9 +43,19 @@ dashboard cards more decision-useful, with near-zero schema churn.
 
 Pluggable enricher pattern — runs on ingest *and* on-demand via API.
 
-- ⚪ urlscan.io (free, generous limit) — URL/domain reputation + screenshots
-- ⚪ GreyNoise Community — internet-noise filter; expected to drop
-  ~30% of ingested IOCs as benign mass scanners
+- 🟢 **urlscan.io — URL/domain reputation + screenshots**
+  (shipped 2026-06-08: `enrichURLScan()` searches existing public scans
+  via `/api/v1/search/?q=page.url:...` or `page.domain:...`, returns the
+  latest verdict (malicious / categories / brands), page metadata, and
+  screenshot URL. Free tier of 1000 searches/day with `URLSCAN_API_KEY`;
+  works unauthenticated at lower volume. Added to the default source
+  set for url + domain enrichment.)
+- 🟢 **GreyNoise Community — internet-noise filter**
+  (shipped 2026-06-08: `enrichGreyNoise()` hits the v3 Community endpoint,
+  returns classification + noise/riot flags + scanner name. Drops benign
+  scanners (Shodan, Censys, security researchers) from priority. Community
+  endpoint works without `GREYNOISE_API_KEY` at 50 lookups/day; with a
+  free key, 10k/day. Added to the default source set for ip enrichment.)
 - 🟢 **AbuseIPDB — community-reported abusive IPs**
   (already in master pre-Phase-1: `enrichAbuseIPDB()` in
   `packages/core/src/enrichment.ts` hits `/api/v2/check` with a 90-day

@@ -24,6 +24,8 @@ export type EnrichmentSource =
     | 'threatfox'
     | 'urlhaus'
     | 'safebrowsing'
+    | 'urlscan'      // urlscan.io — URL / domain scan history + screenshot URL
+    | 'greynoise'    // GreyNoise Community — internet noise / scanner identification
     | 'mitre'
     | 'internal';
 
@@ -1184,6 +1186,8 @@ const ENRICHMENT_FUNCTIONS: Record<EnrichmentSource, (value: string, type: IOCTy
     safebrowsing: enrichSafeBrowsing,
     shodan: enrichShodan,
     zoomeye: enrichZoomEye,
+    urlscan: enrichURLScan,
+    greynoise: enrichGreyNoise,
     mitre: async () => ({ source: 'mitre', timestamp: new Date(), success: false, error: 'Not implemented', ttlSeconds: 86400 }),
     internal: async () => ({ source: 'internal', timestamp: new Date(), success: false, error: 'Not implemented', ttlSeconds: 86400 }),
 };
@@ -1273,6 +1277,230 @@ async function enrichSafeBrowsing(value: string, type: IOCType): Promise<Enrichm
     } catch (err: any) {
         return {
             source: 'safebrowsing',
+            timestamp: new Date(),
+            success: false,
+            error: err.message,
+            ttlSeconds: 3600,
+        };
+    }
+}
+
+/**
+ * urlscan.io enrichment
+ * Supports: URL, domain. Searches for existing scans of the IOC and returns
+ * the most recent verdict + screenshot URL. We don't *submit* new scans here:
+ * urlscan's free tier caps scans at 100/day but searches at 1000/day, and
+ * a search hit is dramatically more useful at enrichment time than waiting
+ * 30+ seconds for a fresh scan to complete.
+ *
+ * Falls back to unauthenticated mode when no `URLSCAN_API_KEY` is set:
+ * public scan history is queryable without auth (rate-limit drops to
+ * roughly the public anonymous tier — still useful for low-volume hits).
+ */
+async function enrichURLScan(value: string, type: IOCType): Promise<EnrichmentResult> {
+    if (type !== 'url' && type !== 'domain') {
+        return {
+            source: 'urlscan',
+            timestamp: new Date(),
+            success: false,
+            error: 'urlscan.io only supports URLs and domains',
+            ttlSeconds: 86400,
+        };
+    }
+
+    const apiKey = process.env.URLSCAN_API_KEY;
+    const headers: Record<string, string> = { 'Accept': 'application/json' };
+    if (apiKey) headers['API-Key'] = apiKey;
+
+    try {
+        // Field-qualified query so we don't false-match URLs that mention
+        // the IOC in their query string. For domains we match `page.domain`;
+        // for URLs we match `page.url` first, then fall back to `page.domain`
+        // if no URL-level hit. Sorted DESC by date so the freshest scan wins.
+        const q = type === 'domain'
+            ? `page.domain:${value}`
+            : `page.url:"${value.replace(/"/g, '\\"')}"`;
+        const url = `https://urlscan.io/api/v1/search/?q=${encodeURIComponent(q)}&size=1`;
+        const response = await fetch(url, { headers });
+
+        if (response.status === 429) {
+            return {
+                source: 'urlscan',
+                timestamp: new Date(),
+                success: false,
+                error: 'urlscan rate limit (try again later or set URLSCAN_API_KEY)',
+                ttlSeconds: 600,
+            };
+        }
+        if (!response.ok) {
+            throw new Error(`urlscan API error: ${response.status}`);
+        }
+
+        const body = await response.json() as {
+            results?: Array<{
+                _id?: string;
+                task?: { url?: string; time?: string; visibility?: string };
+                page?: { url?: string; domain?: string; ip?: string; country?: string; server?: string; title?: string };
+                verdicts?: { overall?: { malicious?: boolean; score?: number; categories?: string[]; brands?: Array<{ name: string }> } };
+                screenshot?: string;
+                result?: string;
+            }>;
+            total?: number;
+        };
+
+        const hit = body.results?.[0];
+        if (!hit) {
+            return {
+                source: 'urlscan',
+                timestamp: new Date(),
+                success: true,
+                data: { found: false, message: 'No urlscan.io history for this IOC' },
+                ttlSeconds: 3600,
+            };
+        }
+
+        const overall = hit.verdicts?.overall;
+        return {
+            source: 'urlscan',
+            timestamp: new Date(),
+            success: true,
+            data: {
+                found: true,
+                scanId: hit._id ?? null,
+                lastScanAt: hit.task?.time ?? null,
+                scannedUrl: hit.task?.url ?? hit.page?.url ?? null,
+                visibility: hit.task?.visibility ?? null,
+                page: {
+                    title: hit.page?.title ?? null,
+                    domain: hit.page?.domain ?? null,
+                    ip: hit.page?.ip ?? null,
+                    country: hit.page?.country ?? null,
+                    server: hit.page?.server ?? null,
+                },
+                verdict: {
+                    malicious: overall?.malicious ?? false,
+                    score: overall?.score ?? null,
+                    categories: overall?.categories ?? [],
+                    brands: (overall?.brands ?? []).map(b => b.name),
+                },
+                screenshotUrl: hit.screenshot ?? null,
+                resultUrl: hit.result ?? null,
+                totalScansFound: body.total ?? 1,
+            },
+            ttlSeconds: 1800,
+        };
+    } catch (err: any) {
+        return {
+            source: 'urlscan',
+            timestamp: new Date(),
+            success: false,
+            error: err.message,
+            ttlSeconds: 3600,
+        };
+    }
+}
+
+/**
+ * GreyNoise Community enrichment
+ * Supports: IP addresses only.
+ *
+ * Surfaces whether the IP is a known internet scanner (benign reconnaissance,
+ * Censys-style mass scans, etc.) so analysts can deprioritise them. The
+ * roadmap target is "drops ~30% of ingested IOCs as benign mass scanners" —
+ * that's the operational outcome of routing GreyNoise's `classification` into
+ * IOC severity / priority filters downstream.
+ *
+ * The Community endpoint is free, returns a 0-or-1 row per IP, and works
+ * unauthenticated for low-volume use (50 lookups / day). With a free
+ * community API key (`GREYNOISE_API_KEY`) the limit goes to 10,000 / day.
+ *
+ * Classification values:
+ *   - `malicious`  — observed in active attacks (rare for benign-scanner IPs)
+ *   - `suspicious` — pattern consistent with reconnaissance
+ *   - `benign`     — known-good scanner (Shodan, Censys, security researchers)
+ *   - `unknown`    — seen but unclassified
+ *   - 404 response — never seen by GreyNoise (treat as "unknown")
+ */
+async function enrichGreyNoise(value: string, type: IOCType): Promise<EnrichmentResult> {
+    if (type !== 'ip') {
+        return {
+            source: 'greynoise',
+            timestamp: new Date(),
+            success: false,
+            error: 'GreyNoise only supports IP addresses',
+            ttlSeconds: 86400,
+        };
+    }
+
+    const apiKey = process.env.GREYNOISE_API_KEY;
+    const headers: Record<string, string> = { 'Accept': 'application/json' };
+    if (apiKey) headers['key'] = apiKey;
+
+    try {
+        const url = `https://api.greynoise.io/v3/community/${encodeURIComponent(value)}`;
+        const response = await fetch(url, { headers });
+
+        // GreyNoise returns 404 for IPs they've never seen. That's not an
+        // error — it's a valid "no signal" result.
+        if (response.status === 404) {
+            return {
+                source: 'greynoise',
+                timestamp: new Date(),
+                success: true,
+                data: { found: false, classification: 'unknown', message: 'GreyNoise has not observed this IP' },
+                // Longer TTL: an IP not yet seen by GreyNoise is unlikely to
+                // suddenly start scanning the internet in the next 24h.
+                ttlSeconds: 86400,
+            };
+        }
+        if (response.status === 429) {
+            return {
+                source: 'greynoise',
+                timestamp: new Date(),
+                success: false,
+                error: 'GreyNoise rate limit (try again later or set GREYNOISE_API_KEY)',
+                ttlSeconds: 600,
+            };
+        }
+        if (!response.ok) {
+            throw new Error(`GreyNoise API error: ${response.status}`);
+        }
+
+        const data = await response.json() as {
+            ip?: string;
+            noise?: boolean;
+            riot?: boolean;
+            classification?: 'malicious' | 'suspicious' | 'benign' | 'unknown';
+            name?: string;
+            link?: string;
+            last_seen?: string;
+            message?: string;
+        };
+
+        return {
+            source: 'greynoise',
+            timestamp: new Date(),
+            success: true,
+            data: {
+                found: true,
+                ip: data.ip ?? value,
+                // `noise=true` means observed making unsolicited connections.
+                // `riot=true` (Rule It Out) means trusted-service IP — Google,
+                // Apple, Cloudflare. Both are useful filter signals downstream.
+                isNoise: data.noise ?? false,
+                isCommonService: data.riot ?? false,
+                classification: data.classification ?? 'unknown',
+                actorName: data.name ?? null,
+                lastSeen: data.last_seen ?? null,
+                referenceUrl: data.link ?? null,
+                message: data.message ?? null,
+            },
+            // 12h cadence matches GreyNoise's own classification update window.
+            ttlSeconds: 43200,
+        };
+    } catch (err: any) {
+        return {
+            source: 'greynoise',
             timestamp: new Date(),
             success: false,
             error: err.message,
