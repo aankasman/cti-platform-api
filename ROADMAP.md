@@ -34,7 +34,7 @@ Last reviewed: **2026-06-05**.
 
 ## Phase 1 · Enrichment & Detection-as-Code
 
-**Target window: 2026-06 → 2026-07**  ·  **Status: 🟡 In flight** (7 of 11 items shipped — VirusTotal v3 + AbuseIPDB already in master since pre-Phase-1; EPSS, Shodan, inKev shipped 2026-06-05; urlscan.io + GreyNoise shipped 2026-06-08)
+**Target window: 2026-06 → 2026-07**  ·  **Status: 🟡 In flight** (9 of 11 items shipped — VirusTotal v3 + AbuseIPDB already in master since pre-Phase-1; EPSS, Shodan, inKev shipped 2026-06-05; urlscan.io + GreyNoise shipped 2026-06-08; Sigma ingester + MITRE tag mapping shipped 2026-06-08)
 
 The highest-leverage phase: every enricher we add makes existing
 dashboard cards more decision-useful, with near-zero schema churn.
@@ -91,8 +91,22 @@ Pluggable enricher pattern — runs on ingest *and* on-demand via API.
 
 ### Detection rules — Sigma & YARA
 
-- ⚪ Sigma rule library ingestion from SigmaHQ + custom rules
-- ⚪ Map Sigma `tags:` → MITRE ATT&CK techniques (we already model these)
+- 🟢 **Sigma rule ingester + library API**
+  (shipped 2026-06-08: `packages/core/src/sigma.ts` parses upstream
+  SigmaHQ YAML into our `detection_rules` table with `rule_type='sigma'`,
+  preserving the full `detection:` block + `logsource` so downstream
+  converters (Splunk, Elastic, OpenSearch) have something to transform.
+  Single rules or `---`-separated bundles. `POST /v1/sigma/rules` takes
+  raw YAML or JSON-wrapped; `POST /v1/sigma/import/url` pulls from a
+  URL. Pre-existing MISP-Galaxy sigma ingest keeps populating
+  metadata-only rows alongside.)
+- 🟢 **Sigma `tags:` → MITRE ATT&CK technique mapping**
+  (shipped 2026-06-08: `attack.tNNNN[.NNN]` tags lift to canonical
+  `TNNNN[.NNN]` IDs in `meta.mitre_techniques`; `attack.<kebab-tactic>`
+  tags lift into `meta.mitre_tactics`. Queryable via
+  `GET /v1/sigma/by-technique/:techniqueId` using a JSONB containment
+  predicate. Lower-case Sigma convention round-trips to upper-case
+  MITRE form.)
 - ⚪ YARA rule storage + "scan uploaded sample" endpoint
   (rule store + match service only — no live execution)
 

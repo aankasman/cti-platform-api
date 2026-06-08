@@ -34,6 +34,7 @@ import configRoutes from './v1/config';
 import batchRoutes from './v1/batch';
 import stixPipeline from './v1/stixPipeline';
 import yaraRoutes from './v1/yara';
+import sigmaRoutes from './v1/sigma';
 import taxonomyRoutes from './v1/taxonomies';
 import exportEnhancedRoutes from './v1/exportEnhanced';
 import caseRoutes from './v1/cases';
@@ -80,6 +81,7 @@ v1.get('/', (c) => {
             correlation: '/v1/correlation',
             playbooks: '/v1/playbooks',
             yara: '/v1/yara',
+            sigma: '/v1/sigma',
             stix: '/v1/stix',
             instantSearch: '/v1/search/instant',
             fight: '/v1/fight',
@@ -135,6 +137,7 @@ v1.route('/', configRoutes);                 // Config management (feeds, API ke
 v1.route('/', batchRoutes);                  // Batch operations (bulk update/delete/tag)
 v1.route('/', stixPipeline);                 // STIX 2.1 import/export/validate
 v1.route('/', yaraRoutes);                   // YARA rule matching engine
+v1.route('/', sigmaRoutes);                  // Sigma rule library (/sigma/*)
 v1.route('/', taxonomyRoutes);               // Taxonomy & tag namespace system
 v1.route('/', exportEnhancedRoutes);         // Enhanced export (MISP, Suricata, reports)
 v1.route('/', caseRoutes);                   // Case / investigation management
