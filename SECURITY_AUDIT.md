@@ -221,3 +221,83 @@ Files touched (60 sites total, 10 files): `iocs.ts`, `yara.ts`,
 - [TanStack incident follow-up (hardening)](https://tanstack.com/blog/incident-followup)
 - [Snyk write-up — Mini Shai-Hulud](https://snyk.io/blog/tanstack-npm-packages-compromised/)
 - [Wiz write-up](https://www.wiz.io/blog/mini-shai-hulud-strikes-again-tanstack-more-npm-packages-compromised)
+
+---
+
+# Security Audit — 2026-06-08 (follow-up)
+
+Triggered by CI `pnpm audit` failure after Phase 4 PRs landed
+(#48-#70). Closes the **deferred items** from the 2026-05-27 audit
+(drizzle-orm 0.30 → 0.45 + transitive cleanups) plus three new
+advisories that surfaced since (protobufjs 8.0.0 RCE, vitest UI file
+disclosure, drizzle-orm SQLi).
+
+## Headline result
+
+| Severity | Before | After | Change |
+|----------|--------|-------|--------|
+| critical | 3  | 0  | −3 |
+| high     | 19 | 0  | −19 |
+| moderate | 16 | 0  | −16 |
+| low      | 1  | 0  | −1 |
+| **total** | **39** | **0** | **−39 (100%)** |
+
+## What changed
+
+**Direct dependency bumps** (security-driven only; no API changes
+beyond what was already in the deferred list from 2026-05-27):
+
+- `drizzle-orm` `^0.30.0` → `^0.45.2` across `packages/db`,
+  `packages/core`, `apps/worker` — patches GHSA-gpj5-g38j-94v9 (SQL
+  injection via improperly escaped identifiers). This was the
+  highest-impact finding: prod direct dep.
+- `drizzle-kit` `^0.21.0` → `^0.31.0` for compatibility with the new
+  ORM major.
+- `vitest` `^1.4.0` → `^4.1.0` across all four packages — patches
+  GHSA-5xrq-8626-4rwp (arbitrary file read/exec when UI server is
+  listening). Our test scripts use `vitest run` (no UI), so the
+  exposure was nil in practice; bumping anyway to clear the audit.
+- `turbo` `^2.0.0` → `^2.9.14` — patches GHSA-hcf7-66rw-9f5r (CSRF /
+  session fixation in login callback) and GHSA-3qcw-2rhx-2726.
+- `@opentelemetry/auto-instrumentations-node` `^0.69.0` → `^0.75.0`
+  and `sdk-node` / `exporter-*-otlp-http` `^0.212.0` → `^0.217.0` —
+  patches the Prometheus-exporter process-crash advisory (GHSA family)
+  reaching us via three packages in the OTel ecosystem.
+
+**Expanded `pnpm.overrides`** (transitive supply-chain floors):
+
+| Package | Floor | Reason |
+|---|---|---|
+| `protobufjs` | `>=8.0.1` | Arbitrary code execution (GHSA-xq3m-2v4x-88gg) via OTel → grpc. Previous floor `>=7.5.5` no longer enough now that OTel ships 8.x. |
+| `minimatch` | `>=9.0.5` | Three ReDoS advisories via drizzle-kit's glob chain. |
+| `fast-uri` | `>=3.1.2` | Path traversal + host confusion via Hono → ajv. |
+| `lodash` | `>=4.18.0` | Template code injection (GHSA-r5fr-rjxr-66jc) via bull-board + dagre. |
+| `esbuild` | `>=0.25.0` | Dev-server cross-origin advisory. |
+| `brace-expansion` | `>=2.0.3` | DoS via zero-step sequence. |
+| `rollup` | `>=4.59.0` | Path traversal arbitrary file write. |
+| `vite` | `>=5.4.16` | Path traversal in optimised-deps `.map` handling. |
+| `yaml` | `>=2.8.3` | Stack overflow via deeply-nested collections. |
+| `ws` | `>=8.20.1` | Uninitialised memory disclosure. |
+| `uuid` | `>=11.1.1` | Missing buffer bounds check in v3/v5/v6. |
+
+**Override comment block** in root `package.json` documents the
+GHSA id + reachability path for every floor — keeps future-us from
+asking "why is this here?" months from now.
+
+## Verification
+
+- `pnpm install` clean
+- `pnpm --filter @rinjani/api exec tsc --noEmit` — 0 errors
+- `pnpm --filter @rinjani/gateway exec tsc --noEmit` — 0 errors
+- `pnpm --filter @rinjani/api exec vitest run` — 754/754 passing on
+  vitest 4.1.8 (no test breakage from the vitest 1 → 4 major bump
+  because we use the default config + `run` mode only — no UI, no
+  experimental APIs)
+- `pnpm audit` — 39 → 0 advisories
+
+## What to do post-merge
+
+- This audit cleared the deferred drizzle-orm + transitive items
+  from 2026-05-27; nothing remains deferred from prior audits.
+- The `pnpm audit` CI gate that was failing on PR #69/#70's runs
+  should be green again — no follow-up CI work needed.
