@@ -230,7 +230,7 @@ surfaces rather than a generic chat widget.
 
 ## Phase 4 · Outbound integrations
 
-**Target window: 2026-12 → 2027-02**  ·  **Status: ⚪ Planned**
+**Target window: 2026-12 → 2027-02**  ·  **Status: 🟡 In flight** (1 of 6 items shipped — SIEM CEF/LEEF/ECS codecs shipped 2026-06-08)
 
 Make the platform an active participant in the analyst's stack, not a
 walled garden.
@@ -238,8 +238,14 @@ walled garden.
 - ⚪ **Notification routing** — Slack, Teams, Discord, Email, PagerDuty,
   generic webhook. Rule-based: `severity=critical AND inKev=true →
   PagerDuty`
-- ⚪ **SIEM exporters** — Splunk HEC, Elastic, Microsoft Sentinel;
-  formats: CEF, LEEF, ECS, STIX bundle
+  (Slack + Email + generic webhook already wired pre-Phase-4; Teams,
+  Discord, PagerDuty adapters + the rule DSL are the open work.)
+- 🟡 **SIEM exporters** — JSON/CSV/MISP/STIX/IDS-rules already shipped;
+  CEF + LEEF + ECS NDJSON shipped 2026-06-08 via
+  `POST /v1/export/{cef,leef,ecs}` (codecs in
+  `@rinjani/core/siemFormatters`). A direct Splunk HEC client / Elastic
+  bulk push / Sentinel Log Analytics API is the open work — the codecs
+  are the hard part, those are thin HTTP clients on top.
 - ⚪ **SOAR-style playbooks** — our Workbench / FlowProducer pattern is
   already a playbook engine; expose it as a `Trigger → Steps` DSL
 - ⚪ **Blocklist exports** — CSV, MISP feed, Fortinet, Palo Alto, Cisco

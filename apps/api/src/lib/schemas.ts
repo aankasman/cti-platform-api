@@ -406,6 +406,18 @@ export const SigmaListSchema = z.object({
 });
 export type SigmaListFilters = z.infer<typeof SigmaListSchema>;
 
+// ── Phase 4 #2 — SIEM exporters ────────────────────────────────────
+
+/** POST /v1/export/{cef|leef|ecs} — IOC dump in vendor-neutral SIEM formats */
+export const SiemExportSchema = z.object({
+    dateFrom: z.string().max(40).optional(),
+    dateTo: z.string().max(40).optional(),
+    severity: z.enum(['critical', 'high', 'medium', 'low']).optional(),
+    type: z.string().max(50).optional(),
+    limit: z.coerce.number().int().min(1).max(100_000).default(10_000),
+});
+export type SiemExport = z.infer<typeof SiemExportSchema>;
+
 // ── Phase 3 #2 — Actor activity summary ────────────────────────────
 
 /** GET|POST /v1/threat-actors/:id/summary — LLM-backed activity briefing */
