@@ -61,3 +61,6 @@ export * from './feedSyncRuns';
 
 // Outbound TAXII 2.1 push targets (Phase 2 federation)
 export * from './taxiiRemoteTargets';
+
+// STIX 2.1 SDOs added in Phase 2 #1 (campaigns, courses_of_action, infrastructure)
+export * from './stixEntities';

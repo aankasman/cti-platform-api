@@ -16,6 +16,7 @@ import { createLogger } from '../../lib/logger';
 import { requireAuth, requireRole } from '../../middleware/auth';
 import { ValidationError } from '../../lib/errors';
 import { StixImportSchema, StixExportSchema } from '../../lib/schemas';
+import { autoHydrateRelationship } from '../../services/neo4j/syncRelationships';
 
 const log = createLogger('STIX-Pipeline');
 
@@ -75,6 +76,9 @@ interface ImportResult {
         vulnerabilities: number;
         threatActors: number;
         malware: number;
+        campaigns: number;
+        coursesOfAction: number;
+        infrastructure: number;
         relationships: number;
         identities: number;
         markings: number;
@@ -209,7 +213,7 @@ async function importSTIXBundle(bundle: STIXBundle, dryRun: boolean): Promise<Im
     const result: ImportResult = {
         bundleId: bundle.id,
         totalObjects: bundle.objects.length,
-        imported: { indicators: 0, vulnerabilities: 0, threatActors: 0, malware: 0, relationships: 0, identities: 0, markings: 0, skipped: 0 },
+        imported: { indicators: 0, vulnerabilities: 0, threatActors: 0, malware: 0, campaigns: 0, coursesOfAction: 0, infrastructure: 0, relationships: 0, identities: 0, markings: 0, skipped: 0 },
         skippedTypes: {},
         errors: [],
         dryRun,
@@ -361,8 +365,104 @@ async function importSTIXBundle(bundle: STIXBundle, dryRun: boolean): Promise<Im
         }
     }
 
+    // Process campaign SDOs → campaigns table
+    for (const c of (grouped.get('campaign') || [])) {
+        try {
+            if (!dryRun) {
+                const esc = (s: string) => s.replace(/'/g, "''");
+                const aliases = JSON.stringify((c as { aliases?: string[] }).aliases ?? []).replace(/'/g, "''");
+                const refs = JSON.stringify(c.external_references || []).replace(/'/g, "''");
+                const labels = JSON.stringify(c.labels || []).replace(/'/g, "''");
+                await db.execute(sql.raw(`
+                    INSERT INTO campaigns (stix_id, name, description, aliases, first_seen, last_seen, objective, external_references, labels, stix_created, stix_modified, synced_at)
+                    VALUES ('${esc(c.id)}', '${esc(c.name || 'Unknown')}', '${esc(c.description || '')}',
+                            '${aliases}'::jsonb,
+                            ${(c as { first_seen?: string }).first_seen ? `'${(c as { first_seen?: string }).first_seen}'` : 'NULL'},
+                            ${(c as { last_seen?: string }).last_seen ? `'${(c as { last_seen?: string }).last_seen}'` : 'NULL'},
+                            ${(c as { objective?: string }).objective ? `'${esc((c as { objective?: string }).objective!)}'` : 'NULL'},
+                            '${refs}'::jsonb,
+                            '${labels}'::jsonb,
+                            ${c.created ? `'${c.created}'` : 'NULL'},
+                            ${c.modified ? `'${c.modified}'` : 'NULL'},
+                            NOW())
+                    ON CONFLICT (stix_id) DO UPDATE SET
+                        description = COALESCE(EXCLUDED.description, campaigns.description),
+                        synced_at = NOW(), updated_at = NOW()
+                `));
+                refMap.set(c.id, { entityType: 'campaign', internalId: stripStixIdPrefix(c.id) });
+            }
+            result.imported.campaigns++;
+        } catch (err) {
+            result.errors.push({ objectId: c.id, error: (err as Error).message });
+        }
+    }
+
+    // Process course-of-action SDOs → courses_of_action table
+    for (const coa of (grouped.get('course-of-action') || [])) {
+        try {
+            if (!dryRun) {
+                const esc = (s: string) => s.replace(/'/g, "''");
+                const refs = JSON.stringify(coa.external_references || []).replace(/'/g, "''");
+                const labels = JSON.stringify(coa.labels || []).replace(/'/g, "''");
+                const actionType = (coa as { action_type?: string }).action_type;
+                const actionDesc = (coa as { action_description?: string }).action_description;
+                await db.execute(sql.raw(`
+                    INSERT INTO courses_of_action (stix_id, name, description, action_type, action_description, external_references, labels, stix_created, stix_modified, synced_at)
+                    VALUES ('${esc(coa.id)}', '${esc(coa.name || 'Unknown')}', '${esc(coa.description || '')}',
+                            ${actionType ? `'${esc(actionType)}'` : 'NULL'},
+                            ${actionDesc ? `'${esc(actionDesc)}'` : 'NULL'},
+                            '${refs}'::jsonb,
+                            '${labels}'::jsonb,
+                            ${coa.created ? `'${coa.created}'` : 'NULL'},
+                            ${coa.modified ? `'${coa.modified}'` : 'NULL'},
+                            NOW())
+                    ON CONFLICT (stix_id) DO UPDATE SET
+                        description = COALESCE(EXCLUDED.description, courses_of_action.description),
+                        synced_at = NOW(), updated_at = NOW()
+                `));
+                refMap.set(coa.id, { entityType: 'course-of-action', internalId: stripStixIdPrefix(coa.id) });
+            }
+            result.imported.coursesOfAction++;
+        } catch (err) {
+            result.errors.push({ objectId: coa.id, error: (err as Error).message });
+        }
+    }
+
+    // Process infrastructure SDOs → infrastructure table
+    for (const inf of (grouped.get('infrastructure') || [])) {
+        try {
+            if (!dryRun) {
+                const esc = (s: string) => s.replace(/'/g, "''");
+                const itypes = JSON.stringify((inf as { infrastructure_types?: string[] }).infrastructure_types ?? []).replace(/'/g, "''");
+                const aliases = JSON.stringify((inf as { aliases?: string[] }).aliases ?? []).replace(/'/g, "''");
+                const kcp = JSON.stringify((inf as { kill_chain_phases?: unknown[] }).kill_chain_phases ?? []).replace(/'/g, "''");
+                const refs = JSON.stringify(inf.external_references || []).replace(/'/g, "''");
+                const labels = JSON.stringify(inf.labels || []).replace(/'/g, "''");
+                await db.execute(sql.raw(`
+                    INSERT INTO infrastructure (stix_id, name, description, infrastructure_types, aliases, kill_chain_phases, first_seen, last_seen, external_references, labels, stix_created, stix_modified, synced_at)
+                    VALUES ('${esc(inf.id)}', '${esc(inf.name || 'Unknown')}', '${esc(inf.description || '')}',
+                            '${itypes}'::jsonb, '${aliases}'::jsonb, '${kcp}'::jsonb,
+                            ${(inf as { first_seen?: string }).first_seen ? `'${(inf as { first_seen?: string }).first_seen}'` : 'NULL'},
+                            ${(inf as { last_seen?: string }).last_seen ? `'${(inf as { last_seen?: string }).last_seen}'` : 'NULL'},
+                            '${refs}'::jsonb, '${labels}'::jsonb,
+                            ${inf.created ? `'${inf.created}'` : 'NULL'},
+                            ${inf.modified ? `'${inf.modified}'` : 'NULL'},
+                            NOW())
+                    ON CONFLICT (stix_id) DO UPDATE SET
+                        description = COALESCE(EXCLUDED.description, infrastructure.description),
+                        synced_at = NOW(), updated_at = NOW()
+                `));
+                refMap.set(inf.id, { entityType: 'infrastructure', internalId: stripStixIdPrefix(inf.id) });
+            }
+            result.imported.infrastructure++;
+        } catch (err) {
+            result.errors.push({ objectId: inf.id, error: (err as Error).message });
+        }
+    }
+
     // Process relationships AFTER all other objects so refMap is populated.
-    // STIX `relationship_type` is preserved verbatim — Phase 2 #2 will enum-constrain.
+    // relationship_type is constrained by the DB CHECK in migration 0045
+    // and the @rinjani/core/stixVocab Zod enum on the user-facing route.
     for (const rel of (grouped.get('relationship') || [])) {
         try {
             const srcRef = rel.source_ref as string | undefined;
@@ -393,6 +493,16 @@ async function importSTIXBundle(bundle: STIXBundle, dryRun: boolean): Promise<Im
                             '${esc(tgt.entityType)}', '${esc(tgt.internalId)}',
                             ${desc}, ${confidence}, 'stix-import')
                 `));
+                // Mirror to Neo4j as an edge; failures get logged but don't break the import.
+                autoHydrateRelationship({
+                    sourceType: src.entityType,
+                    sourceId: src.internalId,
+                    relationshipType: relType as string,
+                    targetType: tgt.entityType,
+                    targetId: tgt.internalId,
+                    description: typeof rel.description === 'string' ? rel.description : null,
+                    confidence,
+                }).catch((err) => log.warn('STIX-import Neo4j hydrate failed', { error: (err as Error).message }));
             }
             result.imported.relationships++;
         } catch (err) {
@@ -405,7 +515,11 @@ async function importSTIXBundle(bundle: STIXBundle, dryRun: boolean): Promise<Im
     result.imported.markings = (grouped.get('marking-definition') || []).length;
 
     // Categorise unsupported types for visibility (rather than the blunt `skipped` counter)
-    const handled = new Set(['indicator', 'vulnerability', 'threat-actor', 'malware', 'relationship', 'identity', 'marking-definition']);
+    const handled = new Set([
+        'indicator', 'vulnerability', 'threat-actor', 'malware',
+        'campaign', 'course-of-action', 'infrastructure',
+        'relationship', 'identity', 'marking-definition',
+    ]);
     for (const [type, objs] of grouped) {
         if (handled.has(type)) continue;
         result.skippedTypes[type] = objs.length;
@@ -418,6 +532,9 @@ async function importSTIXBundle(bundle: STIXBundle, dryRun: boolean): Promise<Im
         vulnerabilities: result.imported.vulnerabilities,
         threatActors: result.imported.threatActors,
         malware: result.imported.malware,
+        campaigns: result.imported.campaigns,
+        coursesOfAction: result.imported.coursesOfAction,
+        infrastructure: result.imported.infrastructure,
         relationships: result.imported.relationships,
         identities: result.imported.identities,
         markings: result.imported.markings,

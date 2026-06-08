@@ -119,36 +119,39 @@ Pluggable enricher pattern — runs on ingest *and* on-demand via API.
 
 ## Phase 2 · STIX 2.1 first-class & Federation
 
-**Target window: 2026-08 → 2026-09**  ·  **Status: 🟡 In flight** (4 of 5 items shipped — provenance/TLP + bundle import expansion + outbound TAXII push 2026-06-08 AM; relationship_type CHECK constraint + Neo4j auto-hydrate on `/v1/relationships` INSERT 2026-06-08 PM)
+**Target window: 2026-08 → 2026-09**  ·  **Status: 🟡 In flight** (5 of 5 items shipped — provenance/TLP + bundle import expansion + outbound TAXII push 2026-06-08 AM; relationship_type CHECK constraint + Neo4j auto-hydrate + STIX entity tables for campaign/course-of-action/infrastructure 2026-06-08 PM. `bundle.tar` packaging and hop-based TLP propagation deferred as small follow-ons.)
 
 We speak TAXII but the internal model is still IOC-centric. STIX as
 source of truth opens up federation between Rinjani instances and with
 MISP / OpenCTI / vendor stacks.
 
-- ⚪ Full STIX 2.1 entity CRUD: `intrusion-set`, `campaign`, `malware`,
-  `tool`, `course-of-action`, `attack-pattern`, `vulnerability`,
-  `infrastructure`, `note`, `opinion`
+- 🟢 **Full STIX 2.1 entity coverage** for the 10 Phase-2 SDO types:
+  (shipped 2026-06-08: new `campaigns`, `courses_of_action`,
+  `infrastructure` tables in migration 0046. The remaining seven were
+  already covered before this phase started — `indicator` ↔ `iocs`,
+  `vulnerability` ↔ `vulnerabilities`, `threat-actor` ↔ `threat_actors`,
+  `malware` ↔ `malware`, `tool` ↔ `tools` (MITRE schema),
+  `attack-pattern` ↔ `techniques` (the MITRE seed), `intrusion-set` is
+  aliased to `threat_actors` because the relational model doesn't
+  distinguish them. `note` and `opinion` remain skip-only by design —
+  they're commentary, not entities, and the importer's
+  `skippedTypes` counter surfaces them to the dashboard.)
 - 🟢 **Typed relationships + Neo4j auto-hydration**
   (shipped 2026-06-08: `relationship_type` now constrained to the STIX 2.1
   §5.7 SRO common vocab + project-specific extensions via DB CHECK
   constraint (migration 0045) and a Zod enum on `POST /v1/relationships`.
-  The user-facing route fires `autoHydrateRelationship()` on INSERT —
-  a side-effect that MERGEs the matching Cypher edge in Neo4j. Mismatched
-  labels, missing nodes, or driver failures are logged but never block
-  the SQL write. Existing shortest-path endpoint at
-  `findShortestPath(from, to, maxDepth)` now sees a fully-hydrated graph
-  for user-created edges. The STIX-bundle importer's relationship pass
-  is the follow-up to close out hydration symmetry.)
-- 🟡 **Bundle import/export** — JSON works both ways; `.tar` packing still
-  pending.
-  (shipped 2026-06-08: import expanded from 3 SDO types to 7 — adds
-  `malware` → `malware` table and `relationship` → `relationships` table
-  with full ref-resolution so STIX bundles round-trip with attribution
-  intact. `identity` + `marking-definition` are counted but not
-  persisted; `attack-pattern`, `campaign`, `tool`, `course-of-action`,
-  `infrastructure`, `note`, `opinion` are bucketed into `skippedTypes`
-  for visibility — they need entity tables (item 1) before they can be
-  imported.)
+  Both the user-facing route AND the STIX-bundle importer fire
+  `autoHydrateRelationship()` on INSERT — a side-effect that MERGEs the
+  matching Cypher edge in Neo4j. Mismatched labels, missing nodes, or
+  driver failures are logged but never block the SQL write. Existing
+  shortest-path endpoint at `findShortestPath(from, to, maxDepth)` now
+  sees a fully-hydrated graph.)
+- 🟡 **Bundle import/export** — JSON works both ways with full SDO
+  coverage; `.tar` packaging follow-on. (shipped 2026-06-08: import
+  expanded to handle `malware`, `campaign`, `course-of-action`,
+  `infrastructure`, and `relationship` with full ref-resolution.
+  `identity` + `marking-definition` counted but not persisted (they're
+  bundle metadata); `note` + `opinion` skip-only.)
 - 🟢 **TAXII 2.1 push client**
   (shipped 2026-06-08: new `taxii_remote_targets` table + REST CRUD at
   `/v1/taxii/remote-targets/*`, plus `POST /v1/taxii/remote-targets/:id/push`
