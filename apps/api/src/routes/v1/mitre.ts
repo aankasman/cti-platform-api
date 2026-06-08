@@ -7,11 +7,13 @@
 import { Hono } from 'hono';
 import { db, sql, rawQuery } from '@rinjani/db';
 import * as opensearch from '../../services/opensearch';
-import { NotFoundError } from '../../lib/errors';
+import { NotFoundError, ValidationError } from '../../lib/errors';
 import {
     PaginationSchema, SearchQuerySchema, TechniqueFilterSchema,
+    ActorSummarySchema,
 } from '../../lib/schemas';
 import { paginate } from './helpers';
+import { summariseActor } from '../../services/actorSummary';
 
 const router = new Hono();
 
@@ -141,6 +143,39 @@ router.get('/threat-actors/:id', async (c) => {
 
     return c.json({ success: true, data: mappedData, took: result.took });
 });
+
+// ============================================================================
+// Phase 3 #2 — Actor activity summary (LLM-backed)
+// ============================================================================
+
+router.get('/threat-actors/:id/summary', async (c) => {
+    const { id } = c.req.param();
+    const { days, context, provider } = ActorSummarySchema.parse(c.req.query());
+
+    const result = await summariseActor(id, { days, context, provider });
+    if (!result) {
+        throw new NotFoundError('Threat Actor', id);
+    }
+
+    return c.json({ success: true, data: result });
+});
+
+router.post('/threat-actors/:id/summary', async (c) => {
+    const { id } = c.req.param();
+    const body = await c.req.json().catch(() => ({}));
+    const parsed = ActorSummarySchema.safeParse(body);
+    if (!parsed.success) {
+        throw new ValidationError(parsed.error.errors.map(e => e.message).join('; '));
+    }
+
+    const result = await summariseActor(id, parsed.data);
+    if (!result) {
+        throw new NotFoundError('Threat Actor', id);
+    }
+
+    return c.json({ success: true, data: result });
+});
+
 // ============================================================================
 // MITRE ATT&CK - Malware
 // ============================================================================
