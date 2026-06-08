@@ -230,16 +230,21 @@ surfaces rather than a generic chat widget.
 
 ## Phase 4 · Outbound integrations
 
-**Target window: 2026-12 → 2027-02**  ·  **Status: 🟡 In flight** (2 of 6 items shipped — SIEM CEF/LEEF/ECS codecs + Fortinet/PAN/Cisco blocklist feeds shipped 2026-06-08)
+**Target window: 2026-12 → 2027-02**  ·  **Status: 🟡 In flight** (3 of 6 items shipped — SIEM CEF/LEEF/ECS codecs + Fortinet/PAN/Cisco blocklist feeds shipped 2026-06-08 AM; Teams/Discord/PagerDuty notification adapters + rule DSL shipped 2026-06-08 PM)
 
 Make the platform an active participant in the analyst's stack, not a
 walled garden.
 
-- ⚪ **Notification routing** — Slack, Teams, Discord, Email, PagerDuty,
-  generic webhook. Rule-based: `severity=critical AND inKev=true →
-  PagerDuty`
-  (Slack + Email + generic webhook already wired pre-Phase-4; Teams,
-  Discord, PagerDuty adapters + the rule DSL are the open work.)
+- 🟢 **Notification routing** — Slack, Email already shipped pre-Phase-4;
+  Teams + Discord + PagerDuty + rule DSL shipped 2026-06-08.
+  (Teams via MessageCard, Discord via embed, PagerDuty via Events API v2
+  with auto-derived `dedup_key`. Test endpoints at
+  `/notifications/test/{teams,discord,pagerduty}`. New rule DSL at
+  `services/notificationChannels.ts` matches on `severityIn` / `typeIn` /
+  `requireData` and routes to N channels per rule; `resolveRuleChannels()`
+  dedupes overlapping rules. `/notifications/evaluate-rules` lets analysts
+  dry-run a rule against a payload; `/notifications/dispatch` actually
+  fires the matched channels.)
 - 🟡 **SIEM exporters** — JSON/CSV/MISP/STIX/IDS-rules already shipped;
   CEF + LEEF + ECS NDJSON shipped 2026-06-08 via
   `POST /v1/export/{cef,leef,ecs}` (codecs in
@@ -247,7 +252,9 @@ walled garden.
   bulk push / Sentinel Log Analytics API is the open work — the codecs
   are the hard part, those are thin HTTP clients on top.
 - ⚪ **SOAR-style playbooks** — our Workbench / FlowProducer pattern is
-  already a playbook engine; expose it as a `Trigger → Steps` DSL
+  already a playbook engine; expose it as a `Trigger → Steps` DSL  
+  (engine + flat conditions + ordered actions shipped pre-Phase-4; the
+  richer DSL is the open work for this item.)
 - 🟢 **Blocklist exports** — CSV, MISP feed, STIX, Fortinet, Palo Alto,
   Cisco firewall formats; cached, signed, served at stable subscribable
   URLs.

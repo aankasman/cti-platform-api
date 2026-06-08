@@ -9,7 +9,12 @@ import { db, sql } from '@rinjani/db';
 import { createLogger } from '../lib/logger';
 import {
     NotificationSettingsSchema, TestSlackSchema, TestEmailSchema, ManualAlertSchema,
+    TestChannelWebhookSchema, EvaluateRulesSchema,
 } from '../lib/schemas';
+import {
+    sendTeamsNotification, sendDiscordNotification, sendPagerDutyNotification,
+    resolveRuleChannels, dispatchToChannels, type ChannelKind,
+} from '../services/notificationChannels';
 
 const log = createLogger('notifications');
 import {
@@ -173,6 +178,81 @@ notifications.post('/test/email', requireAuth, async (c) => {
     });
 
     return c.json({ success: result.success, error: result.error });
+});
+
+/** POST /notifications/test/teams — Phase 4 #1 — verify a Teams Incoming Webhook URL */
+notifications.post('/test/teams', requireAuth, async (c) => {
+    const { webhookUrl } = TestChannelWebhookSchema.parse(await c.req.json());
+    const result = await sendTeamsNotification(webhookUrl, {
+        type: 'alert', severity: 'medium',
+        title: 'Test Notification',
+        message: 'This is a test notification from Rinjani CTI Platform.',
+    });
+    return c.json({ success: result.success, error: result.error });
+});
+
+/** POST /notifications/test/discord — verify a Discord Webhook URL */
+notifications.post('/test/discord', requireAuth, async (c) => {
+    const { webhookUrl } = TestChannelWebhookSchema.parse(await c.req.json());
+    const result = await sendDiscordNotification(webhookUrl, {
+        type: 'alert', severity: 'medium',
+        title: 'Test Notification',
+        message: 'This is a test notification from Rinjani CTI Platform.',
+    });
+    return c.json({ success: result.success, error: result.error });
+});
+
+/** POST /notifications/test/pagerduty — verify a PagerDuty Events API routing key */
+notifications.post('/test/pagerduty', requireAuth, async (c) => {
+    const { webhookUrl: routingKey } = TestChannelWebhookSchema.parse(await c.req.json());
+    const result = await sendPagerDutyNotification(routingKey, {
+        type: 'alert', severity: 'medium',
+        title: 'Test Notification',
+        message: 'This is a test notification from Rinjani CTI Platform.',
+        data: { dedupKey: `test-${Date.now()}` },
+    });
+    return c.json({ success: result.success, error: result.error });
+});
+
+// ============================================================================
+// Phase 4 #1 — Rule-based routing (DSL)
+// ============================================================================
+
+/**
+ * POST /notifications/evaluate-rules
+ *
+ * Dry-run a list of routing rules against a payload. Returns the matched
+ * (channel, target) pairs WITHOUT firing them — so analysts can sanity-
+ * check a rule like `severity=critical AND inKev=true → PagerDuty`
+ * before turning it on.
+ */
+notifications.post('/evaluate-rules', requireAuth, async (c) => {
+    const { rules, payload } = EvaluateRulesSchema.parse(await c.req.json());
+    const matched = resolveRuleChannels(rules, payload);
+    return c.json({ success: true, data: { matched, count: matched.length } });
+});
+
+/**
+ * POST /notifications/dispatch
+ *
+ * The "real" version: evaluate rules against a payload AND actually
+ * fire the matched channels. Returns per-channel success/error. Used
+ * by playbook actions + manual triggers.
+ */
+notifications.post('/dispatch', requireAuth, async (c) => {
+    const { rules, payload } = EvaluateRulesSchema.parse(await c.req.json());
+    const matched = resolveRuleChannels(rules, payload);
+
+    const results = await dispatchToChannels(matched, payload, {
+        slack: sendSlackNotification,
+        teams: sendTeamsNotification,
+        discord: sendDiscordNotification,
+        pagerduty: sendPagerDutyNotification,
+        email: sendEmailNotification,
+    });
+
+    const ok = results.every(r => r.result.success);
+    return c.json({ success: ok, data: { matched: matched.length, results } }, ok ? 200 : 207);
 });
 
 // ============================================================================
