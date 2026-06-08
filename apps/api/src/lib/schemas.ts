@@ -273,6 +273,49 @@ export const ManualAlertSchema = z.object({
 });
 export type ManualAlert = z.infer<typeof ManualAlertSchema>;
 
+// ── Phase 4 #1 — Extra-channel test + rule routing ─────────────────
+
+const SEVERITY_ENUM = z.enum(['critical', 'high', 'medium', 'low']);
+const NOTIF_TYPE_ENUM = z.enum(['ioc', 'vulnerability', 'threat_actor', 'alert']);
+const CHANNEL_KIND_ENUM = z.enum(['slack', 'teams', 'discord', 'pagerduty', 'email', 'webhook']);
+
+/** POST /notifications/test/{teams,discord,pagerduty} — test a single channel */
+export const TestChannelWebhookSchema = z.object({
+    webhookUrl: z.string().min(1).max(500),
+});
+export type TestChannelWebhook = z.infer<typeof TestChannelWebhookSchema>;
+
+/** A single routing rule — used by POST /notifications/evaluate-rules and /dispatch */
+const NotificationRuleSchema = z.object({
+    name: z.string().min(1).max(200),
+    enabled: z.boolean().default(true),
+    match: z.object({
+        severityIn: z.array(SEVERITY_ENUM).optional(),
+        typeIn: z.array(NOTIF_TYPE_ENUM).optional(),
+        requireData: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+    }),
+    channels: z.array(z.object({
+        channel: CHANNEL_KIND_ENUM,
+        target: z.string().min(1).max(500),
+    })).min(1).max(20),
+});
+
+/** Payload shape mirrors NotificationPayload — kept inline to avoid the cycle. */
+const NotificationPayloadShapeSchema = z.object({
+    type: NOTIF_TYPE_ENUM,
+    severity: SEVERITY_ENUM,
+    title: z.string().min(1).max(500),
+    message: z.string().min(1).max(5000),
+    data: z.record(z.unknown()).optional(),
+});
+
+/** POST /notifications/evaluate-rules and /notifications/dispatch */
+export const EvaluateRulesSchema = z.object({
+    rules: z.array(NotificationRuleSchema).min(1).max(100),
+    payload: NotificationPayloadShapeSchema,
+});
+export type EvaluateRules = z.infer<typeof EvaluateRulesSchema>;
+
 // ── Playbook route schemas ──────────────────────────────────────────
 
 const PlaybookActionSchema = z.object({
