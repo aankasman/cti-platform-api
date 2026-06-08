@@ -42,6 +42,18 @@ export interface SyncResult {
     indicatorsAdded: number;      // Actually new (delta)
     indicatorsUpdated: number;
     errors: string[];
+    /**
+     * Total rows actually written to ANY table during the sync — IOCs +
+     * pulses + galaxy_clusters + threat_actors + techniques + whatever the
+     * feed touches. Optional because the field is new; older callers don't
+     * populate it. When present, the feed-sync worker uses this for
+     * `feed_sync_runs.items_ingested` instead of `indicatorsAdded`, which
+     * is IOC-centric and reads 0 for feeds that mostly write to ancillary
+     * tables (e.g., MISP Galaxy adds ~10k galaxy_cluster rows per cycle —
+     * the dashboard previously showed "0 items" for those runs because
+     * `indicatorsAdded` was 0). Falls back to `indicatorsAdded` when unset.
+     */
+    totalRowsAffected?: number;
     pulses?: Array<{ id: string; name: string; indicatorCount: number }>;
     /** Actual indicator data for auto-enrichment (limited to first N) */
     indicators?: Array<{ id: string; value: string; type: string }>;

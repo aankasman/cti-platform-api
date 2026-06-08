@@ -92,6 +92,28 @@ docker compose --profile apps --profile gateway --profile telemetry up -d
 > typically combine `--profile apps --profile gateway` (Traefik in front of
 > the API) plus whatever observability stack you want.
 
+#### Updating environment variables
+
+⚠️ **`docker compose restart` does NOT re-read `.env`.** It restarts the
+container process but keeps the existing environment. So a change to
+`.env` — adding a new API key, rotating `JWT_SECRET`, updating
+`CORS_ORIGINS`, etc. — won't take effect until you recreate the
+container:
+
+```bash
+# After editing .env, do ONE of these — NOT `restart`:
+
+# Just the API:
+docker compose --profile apps up -d --force-recreate v3-api
+
+# Or rebuild + recreate everything in the apps profile:
+docker compose --profile apps up -d --force-recreate
+```
+
+This caught us during the 2026-06-01 production deploy: CORS headers
+were missing for 20 minutes because the container had stale
+`CORS_ORIGINS`. The `.env` had the right value the whole time.
+
 ### Option 2: Kubernetes (Helm)
 
 ```bash

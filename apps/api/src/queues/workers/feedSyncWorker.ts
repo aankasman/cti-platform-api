@@ -207,10 +207,29 @@ export const feedSyncWorker = new Worker<FeedSyncJobData>(
 
             const { success: _, ...syncData } = (result || {}) as Record<string, unknown>;
 
+            // Footgun #15: prefer `totalRowsAffected` (cross-table count) over
+            // `indicatorsAdded` (IOC-centric). Multi-table feeds like MISP
+            // Galaxy used to report 0 here despite writing ~10k galaxy_cluster
+            // rows per cycle, because the headline number only counted IOCs.
+            //
+            // Footgun #13: when the sync completes with errors in the array
+            // (e.g., "1 error: No Auth-Key configured"), serialise the joined
+            // string into `errorDetails`. Previously only the failure path
+            // captured `errorDetails`, so the dashboard would show "1 error"
+            // with no clue what the error was on successful-with-partials.
+            const errorsArr = (syncData.errors as string[] | undefined) ?? [];
+            const itemsIngested =
+                (syncData.totalRowsAffected as number | undefined)
+                ?? (syncData.indicatorsAdded as number | undefined)
+                ?? newIOCs.length;
+
             await completeFeedSyncRun(runId, {
                 status: 'completed',
-                itemsIngested: (syncData.indicatorsAdded as number) ?? newIOCs.length,
-                errors: (syncData.errors as unknown[])?.length ?? 0,
+                itemsIngested,
+                errors: errorsArr.length,
+                errorDetails: errorsArr.length > 0
+                    ? errorsArr.slice(0, 5).join(' · ').slice(0, 1000)
+                    : undefined,
                 enrichmentChildrenTotal: enrichmentJobsQueued,
             });
 
