@@ -230,7 +230,7 @@ surfaces rather than a generic chat widget.
 
 ## Phase 4 · Outbound integrations
 
-**Target window: 2026-12 → 2027-02**  ·  **Status: 🟡 In flight** (4 of 6 items shipped, 1 scaffolded + 2 vendors — SIEM CEF/LEEF/ECS codecs + Fortinet/PAN/Cisco blocklist feeds + Teams/Discord/PagerDuty notification adapters + rule DSL + playbook condition DSL with step guards shipped 2026-06-08; sandbox scaffold + ANY.RUN/Joe Sandbox/Hybrid Analysis clients shipped 2026-06-08 evening, scheduled poller is the open follow-up)
+**Target window: 2026-12 → 2027-02**  ·  **Status: 🟡 In flight** (5 of 6 items shipped — SIEM CEF/LEEF/ECS codecs + Fortinet/PAN/Cisco blocklist feeds + Teams/Discord/PagerDuty notification adapters + rule DSL + playbook condition DSL with step guards + sandbox triggers across ANY.RUN/Joe Sandbox/Hybrid Analysis with scheduled polling, all shipped 2026-06-08)
 
 Make the platform an active participant in the analyst's stack, not a
 walled garden.
@@ -275,18 +275,21 @@ walled garden.
   header backed by `BLOCKLIST_FEED_SECRET` env var. Falls back to a
   per-process random secret in dev. Public-readable by default; gate
   with `BLOCKLIST_FEED_REQUIRE_AUTH=true` if needed.)
-- 🟡 **Sandbox triggers** — Joe Sandbox, ANY.RUN, Hybrid Analysis (kick
+- 🟢 **Sandbox triggers** — Joe Sandbox, ANY.RUN, Hybrid Analysis (kick
   off, store the report, link it to the originating IOC)
-  (scaffold shipped 2026-06-08: `sandbox_reports` table in migration
-  0047, three vendor clients live — ANY.RUN, Joe Sandbox (form-encoded
-  auth), Hybrid Analysis (`api-key` header + UA). All three normalise
-  into the same `{status, verdict, score, raw}` shape via per-vendor
-  mappers. Umbrella service exposes `submitForAnalysis` +
-  `refreshSandboxReport` + list/detail; routes at `POST /v1/sandbox/submit`
-  + `GET /v1/sandbox/reports` + `:id/refresh`. New `sandbox_trigger`
-  playbook action type so a "high-confidence IOC observed" playbook
-  auto-detonates. Scheduled BullMQ poller for non-terminal reports is
-  the remaining follow-up; file-upload submissions deferred further.)
+  (shipped 2026-06-08: new `sandbox_reports` table in migration 0047
+  with FK to `iocs`. Three vendor clients live: ANY.RUN, Joe Sandbox
+  (form-encoded auth), Hybrid Analysis (`api-key` header + UA). All
+  three normalise into the same `{status, verdict, score, raw}` shape
+  via per-vendor mappers. Umbrella service exposes
+  `submitForAnalysis` + `refreshSandboxReport` + list/detail; routes at
+  `POST /v1/sandbox/submit` + `GET /v1/sandbox/reports` + `:id/refresh`.
+  New `sandbox_trigger` playbook action type so a "high-confidence IOC
+  observed" playbook auto-detonates. Scheduled poller on its own
+  `sandbox-polling` queue refreshes non-terminal reports every 5 min;
+  per-row 1-day TTL caps API quota burn on dead submissions; per-batch
+  parallelism capped at 8. File-upload submissions are the remaining
+  follow-on.)
 - ⚪ **Ticketing** — JIRA + GitHub Issues two-way sync for investigation
   tracking
 

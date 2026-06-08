@@ -24,5 +24,8 @@ export { cveEnrichmentWorker } from './workers/cveEnrichmentWorker';
 // Data lifecycle + maintenance worker
 export { retentionWorker } from './workers/retentionWorker';
 
+// Sandbox poller — refreshes non-terminal sandbox_reports on a schedule (Phase 4 #5b)
+export { sandboxPollerWorker } from './workers/sandboxPollerWorker';
+
 // Event handlers + startup/shutdown
 export { startWorkers, stopWorkers } from './workers/workerEvents';

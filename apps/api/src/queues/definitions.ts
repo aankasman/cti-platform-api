@@ -159,3 +159,15 @@ export const maintenanceQueue = new Queue('maintenance', {
         removeOnFail: { count: 100 },
     },
 });
+
+// Sandbox poller — Phase 4 #5b. Separate queue so a backed-up poll
+// doesn't compete for the maintenance worker's single concurrency slot.
+export const sandboxPollerQueue = new Queue('sandbox-polling', {
+    connection,
+    defaultJobOptions: {
+        attempts: 2,
+        backoff: { type: 'fixed', delay: 30_000 },
+        removeOnComplete: { count: 100 },
+        removeOnFail: { count: 200 },
+    },
+});
