@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { auditActionEnum, entityTypeEnum } from '@rinjani/db/schema';
+import { STIX_RELATIONSHIP_TYPES } from '@rinjani/core/stixVocab';
 
 // ============================================================================
 // Query Parameter Schemas (shared across route files)
@@ -1292,16 +1293,24 @@ export const UpdateReportScheduleSchema = z.object({
 // Phase 13 — IOC Relationship Management (STIX SRO inspired)
 // ============================================================================
 
+// Source vocab kept narrow on purpose — these are the entity types the UI
+// can render today. Adding 'campaign', 'course-of-action', 'infrastructure'
+// (Phase 2 #1 entity tables) will widen this.
+const RELATIONSHIP_ENTITY_TYPES = [
+    'ioc', 'vulnerability', 'threat-actor', 'campaign', 'malware', 'tool',
+    'course-of-action', 'infrastructure',
+] as const;
+
 /** POST /v1/relationships — Create explicit relationship */
 export const CreateRelationshipSchema = z.object({
-    sourceType: z.enum(['ioc', 'vulnerability', 'threat-actor', 'campaign', 'malware', 'tool']),
+    sourceType: z.enum(RELATIONSHIP_ENTITY_TYPES),
     sourceId: z.string().min(1),
-    targetType: z.enum(['ioc', 'vulnerability', 'threat-actor', 'campaign', 'malware', 'tool']),
+    targetType: z.enum(RELATIONSHIP_ENTITY_TYPES),
     targetId: z.string().min(1),
-    relationshipType: z.enum([
-        'related-to', 'derived-from', 'duplicate-of', 'communicates-with',
-        'drops', 'uses', 'targets', 'indicates', 'mitigates', 'attributed-to',
-    ]),
+    // Sourced from @rinjani/core/stixVocab — the canonical STIX 2.1 §5.7
+    // SRO vocab + project-specific extensions. Kept in sync with the DB
+    // CHECK constraint added in migration 0045_relationship_type_check.sql.
+    relationshipType: z.enum(STIX_RELATIONSHIP_TYPES),
     confidence: z.number().int().min(0).max(100).default(70),
     description: z.string().max(2000).optional(),
 });

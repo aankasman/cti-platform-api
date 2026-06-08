@@ -14,7 +14,8 @@
         "./enrichment": "./src/enrichment.ts",
         "./jobs": "./src/jobs.ts",
         "./sigma": "./src/sigma.ts",
-        "./stixProvenance": "./src/stixProvenance.ts"
+        "./stixProvenance": "./src/stixProvenance.ts",
+        "./stixVocab": "./src/stixVocab.ts"
     },
     "scripts": {
         "build": "tsc",
