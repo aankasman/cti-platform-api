@@ -55,19 +55,30 @@ services:
   # ============================================================================
   # PgBouncer - Connection Pooling
   # ============================================================================
+  # Footguns #5/6/7 fix (2026-06-08): the edoburu image *auto-generates*
+  # /etc/pgbouncer/pgbouncer.ini and /etc/pgbouncer/userlist.txt at startup
+  # from DATABASE_URL + AUTH_TYPE + LISTEN_PORT. Previously we mounted a
+  # static userlist.txt with `"postgres" "postgres"` baked in, which:
+  #   (5) rejected any custom POSTGRES_PASSWORD set in .env;
+  #   (6) made the image fall back to LISTEN_PORT=5432 when the static mount
+  #       was removed in isolation, breaking the rest of compose which
+  #       expects pgbouncer on 6432;
+  #   (7) defaulted AUTH_TYPE=md5, but postgres:16 hands out SCRAM-SHA-256
+  #       hashes by default → "wrong password type" loop.
+  # Reference templates still live in ./config/pgbouncer/ for operators who
+  # want to override; they are intentionally NOT mounted.
   v3-pgbouncer:
     container_name: v3-pgbouncer
     image: edoburu/pgbouncer:latest
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@v3-postgres:5432/${POSTGRES_DB:-rinjani_v3}
+      AUTH_TYPE: scram-sha-256
+      LISTEN_PORT: 6432
       POOL_MODE: transaction
       DEFAULT_POOL_SIZE: 20
       MAX_CLIENT_CONN: 200
       MIN_POOL_SIZE: 5
-    volumes:
-      - ./config/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
-      - ./config/pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
     ports:
       - "6432:6432"
     depends_on:
