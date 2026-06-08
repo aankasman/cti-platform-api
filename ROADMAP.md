@@ -230,7 +230,7 @@ surfaces rather than a generic chat widget.
 
 ## Phase 4 · Outbound integrations
 
-**Target window: 2026-12 → 2027-02**  ·  **Status: 🟡 In flight** (1 of 6 items shipped — SIEM CEF/LEEF/ECS codecs shipped 2026-06-08)
+**Target window: 2026-12 → 2027-02**  ·  **Status: 🟡 In flight** (2 of 6 items shipped — SIEM CEF/LEEF/ECS codecs + Fortinet/PAN/Cisco blocklist feeds shipped 2026-06-08)
 
 Make the platform an active participant in the analyst's stack, not a
 walled garden.
@@ -248,8 +248,17 @@ walled garden.
   are the hard part, those are thin HTTP clients on top.
 - ⚪ **SOAR-style playbooks** — our Workbench / FlowProducer pattern is
   already a playbook engine; expose it as a `Trigger → Steps` DSL
-- ⚪ **Blocklist exports** — CSV, MISP feed, Fortinet, Palo Alto, Cisco
-  firewall formats; cached, signed, served at stable subscribable URLs
+- 🟢 **Blocklist exports** — CSV, MISP feed, STIX, Fortinet, Palo Alto,
+  Cisco firewall formats; cached, signed, served at stable subscribable
+  URLs.
+  (shipped 2026-06-08: Fortinet External Block List + Palo Alto External
+  Dynamic List + Cisco threat-feed text formats via
+  `GET /v1/feeds/blocklist/:vendor/:type` for ip/domain/url. Per-vendor
+  validation rejects malformed entries before they reach the firewall.
+  ETag + 5-min Cache-Control + `X-Rinjani-Signature: sha256=...` HMAC
+  header backed by `BLOCKLIST_FEED_SECRET` env var. Falls back to a
+  per-process random secret in dev. Public-readable by default; gate
+  with `BLOCKLIST_FEED_REQUIRE_AUTH=true` if needed.)
 - ⚪ **Sandbox triggers** — Joe Sandbox, ANY.RUN, Hybrid Analysis (kick
   off, store the report, link it to the originating IOC)
 - ⚪ **Ticketing** — JIRA + GitHub Issues two-way sync for investigation
