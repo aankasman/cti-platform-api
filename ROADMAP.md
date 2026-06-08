@@ -183,7 +183,7 @@ MISP / OpenCTI / vendor stacks.
 
 ## Phase 3 · LLM analyst features
 
-**Target window: 2026-10 → 2026-11**  ·  **Status: 🟡 In flight** (2 of 5 items shipped — embedding similarity backend (pre-Phase-3) + actor activity summarisation shipped 2026-06-08)
+**Target window: 2026-10 → 2026-11**  ·  **Status: 🟡 In flight** (3 of 5 items shipped — embedding similarity backend (pre-Phase-3) + actor activity summarisation + NL→Cypher all shipped 2026-06-08)
 
 Provider abstraction (Gemini / OpenRouter / Ollama) already exists. This
 phase wires it into the analyst workflow, deliberately scoped to specific
@@ -208,8 +208,17 @@ surfaces rather than a generic chat widget.
   network) or any of the configured cloud providers. Batch reindex via
   `POST /v2/search/rebuild-with-vectors`. The dashboard-side "Similar
   IOCs" sidebar is the remaining work and lives in the dashboard repo.)
-- ⚪ **Natural-language → Cypher** — query Neo4j without learning
-  Cypher; small model, prompt-tuned to the schema
+- 🟢 **Natural-language → Cypher**
+  (shipped 2026-06-08: `POST /v1/graph/nl-query` takes an English
+  question and returns the generated Cypher + Neo4j records. Three
+  layers of safety: (1) the system prompt documents the schema and
+  forbids writes, (2) `isReadOnlyCypher()` regex-blocks CREATE / MERGE
+  / SET / DELETE / DETACH / REMOVE / DROP and dangerous CALL procedures
+  even on word boundaries — DELETED_AT property names won't false-trigger,
+  (3) `executeCypher()` opens the Neo4j session in READ access mode so
+  the driver itself rejects writes. Defensive prose-stripping handles
+  LLMs that ignore the "no fence, no prose" instruction. 26 unit tests
+  cover the safety guard and extractor.)
 - ⚪ **Hypothesis tracking** — *"I think Group A is using infrastructure
   X"* → LLM grades evidence as it accumulates from feeds
 
