@@ -38,6 +38,7 @@ import sigmaRoutes from './v1/sigma';
 import taxiiPushRoutes from './v1/taxiiPush';
 import taxonomyRoutes from './v1/taxonomies';
 import exportEnhancedRoutes from './v1/exportEnhanced';
+import exportSiemRoutes from './v1/exportSiem';
 import caseRoutes from './v1/cases';
 import reputationRoutes from './v1/reputation';
 import analyzerRoutes from './v1/analyzers';
@@ -142,6 +143,7 @@ v1.route('/', sigmaRoutes);                  // Sigma rule library (/sigma/*)
 v1.route('/', taxiiPushRoutes);              // Outbound TAXII push (/taxii/remote-targets/*)
 v1.route('/', taxonomyRoutes);               // Taxonomy & tag namespace system
 v1.route('/', exportEnhancedRoutes);         // Enhanced export (MISP, Suricata, reports)
+v1.route('/', exportSiemRoutes);             // SIEM export (CEF, LEEF, ECS NDJSON)
 v1.route('/', caseRoutes);                   // Case / investigation management
 v1.route('/', reputationRoutes);             // IP/domain reputation & blocklists
 v1.route('/', analyzerRoutes);               // Multi-analyzer pipeline

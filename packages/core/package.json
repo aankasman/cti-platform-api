@@ -15,7 +15,8 @@
         "./jobs": "./src/jobs.ts",
         "./sigma": "./src/sigma.ts",
         "./stixProvenance": "./src/stixProvenance.ts",
-        "./stixVocab": "./src/stixVocab.ts"
+        "./stixVocab": "./src/stixVocab.ts",
+        "./siemFormatters": "./src/siemFormatters.ts"
     },
     "scripts": {
         "build": "tsc",
