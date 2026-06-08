@@ -119,7 +119,7 @@ Pluggable enricher pattern — runs on ingest *and* on-demand via API.
 
 ## Phase 2 · STIX 2.1 first-class & Federation
 
-**Target window: 2026-08 → 2026-09**  ·  **Status: 🟡 In flight** (5 of 5 items shipped — provenance/TLP + bundle import expansion + outbound TAXII push 2026-06-08 AM; relationship_type CHECK constraint + Neo4j auto-hydrate + STIX entity tables for campaign/course-of-action/infrastructure 2026-06-08 PM. `bundle.tar` packaging and hop-based TLP propagation deferred as small follow-ons.)
+**Target window: 2026-08 → 2026-09**  ·  **Status: 🟢 Closed** (5 of 5 items shipped — provenance/TLP + bundle import expansion + outbound TAXII push 2026-06-08 AM; STIX entity tables for campaign/course-of-action/infrastructure + relationship_type CHECK constraint + Neo4j auto-hydrate on relationship INSERT 2026-06-08 PM. `bundle.tar` packaging and hop-based TLP propagation deferred as small follow-ons; not blockers for federation.)
 
 We speak TAXII but the internal model is still IOC-centric. STIX as
 source of truth opens up federation between Rinjani instances and with
@@ -183,7 +183,7 @@ MISP / OpenCTI / vendor stacks.
 
 ## Phase 3 · LLM analyst features
 
-**Target window: 2026-10 → 2026-11**  ·  **Status: ⚪ Planned**
+**Target window: 2026-10 → 2026-11**  ·  **Status: 🟡 In flight** (1 of 5 items shipped — embedding similarity backend is already in master pre-Phase-3; the dashboard-side "similar to" sidebars are the remaining work and live in the dashboard repo, not here.)
 
 Provider abstraction (Gemini / OpenRouter / Ollama) already exists. This
 phase wires it into the analyst workflow, deliberately scoped to specific
@@ -193,9 +193,14 @@ surfaces rather than a generic chat widget.
   actors into STIX entities for review
 - ⚪ **Auto-summarisation** — *"summarise the last 30 days of this
   actor's activity"* panel on actor pages
-- ⚪ **Embedding similarity** — OpenSearch already has vector support;
-  index every IOC + report and surface "similar to" sidebars. Closes the
-  *"have we seen this before"* loop
+- 🟢 **Embedding similarity** — *"have we seen this before"* loop
+  (backend already in master pre-Phase-3: `POST /v1/search/vector` runs
+  k-NN against OpenSearch's `knn_vector` index, `GET /v1/search/similar/:docId`
+  returns the N most semantically-similar docs for any IOC / pulse / CVE.
+  Embeddings come from `@xenova/transformers` locally (384-dim, no
+  network) or any of the configured cloud providers. Batch reindex via
+  `POST /v2/search/rebuild-with-vectors`. The dashboard-side "Similar
+  IOCs" sidebar is the remaining work and lives in the dashboard repo.)
 - ⚪ **Natural-language → Cypher** — query Neo4j without learning
   Cypher; small model, prompt-tuned to the schema
 - ⚪ **Hypothesis tracking** — *"I think Group A is using infrastructure
