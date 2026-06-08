@@ -10,12 +10,14 @@ import * as opensearch from '../../services/opensearch';
 import {
     GraphLayoutSchema, Neo4jSearchSchema, Neo4jExpandSchema,
     Neo4jPathSchema, LimitSchema, Neo4jSyncSchema, CypherQuerySchema,
+    NlCypherSchema,
 } from '../../lib/schemas';
 import { checkNeo4jHealth, getNeo4jStats } from '../../services/neo4j';
 import {
     neighborhoodExpand, findShortestPath, getAttackTree,
     iocPivot, findRelatedActors, executeCypher, graphSearch,
 } from '../../services/neo4jGraph';
+import { nlToCypherQuery } from '../../services/nlCypher';
 import { neo4jSyncQueue } from '../../queues/index';
 
 const router = new Hono();
@@ -160,6 +162,19 @@ router.post('/graph/neo4j/cypher', async (c) => {
 
     const result = await executeCypher(query, params || {}, limit || 100);
     return c.json({ success: true, data: result });
+});
+
+// ============================================================================
+// Phase 3 #4 — Natural-language → Cypher
+// ============================================================================
+// Ask an English question, get the generated Cypher + records back. Three
+// layers of safety: a strict system prompt, a static read-only regex
+// check, and Neo4j's session-level READ access mode (via executeCypher).
+
+router.post('/graph/nl-query', async (c) => {
+    const { question, limit, provider } = NlCypherSchema.parse(await c.req.json().catch(() => ({})));
+    const result = await nlToCypherQuery(question, { limit, provider });
+    return c.json({ success: result.success, data: result }, result.success ? 200 : 400);
 });
 
 export default router;

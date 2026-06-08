@@ -416,6 +416,16 @@ export const ActorSummarySchema = z.object({
 });
 export type ActorSummary = z.infer<typeof ActorSummarySchema>;
 
+// ── Phase 3 #4 — NL → Cypher ───────────────────────────────────────
+
+/** POST /v1/graph/nl-query — natural-language question → Cypher → records */
+export const NlCypherSchema = z.object({
+    question: z.string().min(1, 'question is required').max(2000),
+    limit: z.coerce.number().int().min(1).max(500).default(25),
+    provider: z.enum(['gemini', 'openrouter', 'ollama']).optional(),
+});
+export type NlCypher = z.infer<typeof NlCypherSchema>;
+
 // ── TAXII push targets ──────────────────────────────────────────────
 
 /** POST /v1/taxii/remote-targets — register a new outbound TAXII target */
