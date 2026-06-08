@@ -7,13 +7,17 @@
 import { describe, it, expect } from 'vitest';
 import { buildActorSummaryPrompt } from '../services/actorSummary';
 import { ActorSummarySchema } from '../lib/schemas';
+import { threatActors } from '@rinjani/db/schema';
 
-const baseActor = {
+type Actor = typeof threatActors.$inferSelect;
+
+const baseActor: Actor = {
     id: 'a1',
     stixId: 'threat-actor--apt28',
     name: 'APT28',
     description: 'A long-running Russian state actor.',
     aliases: ['Fancy Bear', 'Sofacy'],
+    country: null,
     sophistication: 'strategic',
     resourceLevel: 'government',
     primaryMotivation: 'organizational-gain',
@@ -22,12 +26,16 @@ const baseActor = {
     goals: [],
     labels: [],
     externalReferences: [],
+    firstSeen: null,
+    lastSeen: null,
+    createdByRef: null,
+    objectMarkingRefs: null,
     stixCreated: null,
     stixModified: null,
     syncedAt: null,
     createdAt: new Date('2024-01-01'),
     updatedAt: new Date('2024-01-01'),
-} as never;
+};
 
 describe('buildActorSummaryPrompt', () => {
     it('embeds the actor name, aliases, and motivations', () => {
@@ -86,7 +94,7 @@ describe('buildActorSummaryPrompt', () => {
 
     it('handles a missing description gracefully', () => {
         const actor = { ...baseActor, description: null };
-        const p = buildActorSummaryPrompt(actor as never, {
+        const p = buildActorSummaryPrompt(actor, {
             totalRelationships: 0, recentRelationships: 0, outgoingByType: [],
             recentIOCs: [], topMalware: [], recentCampaigns: [],
         }, 30);
