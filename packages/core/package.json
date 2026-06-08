@@ -16,7 +16,8 @@
         "./sigma": "./src/sigma.ts",
         "./stixProvenance": "./src/stixProvenance.ts",
         "./stixVocab": "./src/stixVocab.ts",
-        "./siemFormatters": "./src/siemFormatters.ts"
+        "./siemFormatters": "./src/siemFormatters.ts",
+        "./blocklistFormatters": "./src/blocklistFormatters.ts"
     },
     "scripts": {
         "build": "tsc",

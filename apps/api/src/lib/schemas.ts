@@ -418,6 +418,15 @@ export const SiemExportSchema = z.object({
 });
 export type SiemExport = z.infer<typeof SiemExportSchema>;
 
+// ── Phase 4 #4 — Blocklist feed query params ───────────────────────
+
+/** GET /v1/feeds/blocklist/:vendor/:type — vendor firewall feed */
+export const BlocklistFeedSchema = z.object({
+    severity: z.enum(['critical', 'high', 'medium', 'low']).optional(),
+    limit: z.coerce.number().int().min(1).max(100_000).default(10_000),
+});
+export type BlocklistFeed = z.infer<typeof BlocklistFeedSchema>;
+
 // ── Phase 3 #2 — Actor activity summary ────────────────────────────
 
 /** GET|POST /v1/threat-actors/:id/summary — LLM-backed activity briefing */
