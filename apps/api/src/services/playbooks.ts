@@ -377,6 +377,61 @@ async function executeAction(
                 };
             }
 
+            case 'sandbox_trigger': {
+                // Phase 4 #5 — fire-and-record sandbox submission.
+                // config:
+                //   { vendor: 'anyrun' | 'joesandbox' | 'hybridanalysis',
+                //     valueField?: 'value' | 'url' | 'hash',  // default 'value'
+                //     typeField?: 'type'                        // default 'type'
+                //     iocIdField?: 'iocId' | 'id' }             // default 'id'
+                const cfg = action.config as Record<string, unknown>;
+                const valueField = (cfg.valueField as string | undefined) ?? 'value';
+                const typeField = (cfg.typeField as string | undefined) ?? 'type';
+                const iocIdField = (cfg.iocIdField as string | undefined) ?? 'id';
+                const vendor = (cfg.vendor as string | undefined) ?? 'anyrun';
+
+                const value = triggerData[valueField] as string | undefined;
+                const submittedType = (triggerData[typeField] as string | undefined) ?? 'ioc';
+                const iocId = triggerData[iocIdField] as string | undefined;
+
+                if (!value) {
+                    return {
+                        action: 'sandbox_trigger', success: false,
+                        error: `triggerData has no "${valueField}" field`,
+                        executedAt: startTime.toISOString(),
+                    };
+                }
+                if (vendor !== 'anyrun' && vendor !== 'joesandbox' && vendor !== 'hybridanalysis') {
+                    return {
+                        action: 'sandbox_trigger', success: false,
+                        error: `unknown vendor "${vendor}"`,
+                        executedAt: startTime.toISOString(),
+                    };
+                }
+                if (submittedType !== 'url' && submittedType !== 'hash' && submittedType !== 'file' && submittedType !== 'ioc') {
+                    return {
+                        action: 'sandbox_trigger', success: false,
+                        error: `unsupported submittedType "${submittedType}"`,
+                        executedAt: startTime.toISOString(),
+                    };
+                }
+
+                const { submitForAnalysis } = await import('./sandbox');
+                const outcome = await submitForAnalysis({
+                    vendor,
+                    value,
+                    type: submittedType,
+                    iocId: iocId ?? null,
+                });
+                return {
+                    action: 'sandbox_trigger',
+                    success: outcome.submitted,
+                    result: { reportId: outcome.report.id, vendor, taskId: outcome.report.vendorTaskId },
+                    error: outcome.submitted ? undefined : outcome.error,
+                    executedAt: startTime.toISOString(),
+                };
+            }
+
             default:
                 return {
                     action: action.type,

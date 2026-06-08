@@ -230,7 +230,7 @@ surfaces rather than a generic chat widget.
 
 ## Phase 4 · Outbound integrations
 
-**Target window: 2026-12 → 2027-02**  ·  **Status: 🟡 In flight** (4 of 6 items shipped — SIEM CEF/LEEF/ECS codecs + Fortinet/PAN/Cisco blocklist feeds shipped 2026-06-08 AM; Teams/Discord/PagerDuty notification adapters + rule DSL + playbook condition DSL with step guards shipped 2026-06-08 PM)
+**Target window: 2026-12 → 2027-02**  ·  **Status: 🟡 In flight** (4 of 6 items shipped, 1 scaffolded — SIEM CEF/LEEF/ECS codecs + Fortinet/PAN/Cisco blocklist feeds + Teams/Discord/PagerDuty notification adapters + rule DSL + playbook condition DSL with step guards all shipped 2026-06-08; sandbox triggers scaffold landed 2026-06-08 evening with ANY.RUN wired)
 
 Make the platform an active participant in the analyst's stack, not a
 walled garden.
@@ -275,8 +275,18 @@ walled garden.
   header backed by `BLOCKLIST_FEED_SECRET` env var. Falls back to a
   per-process random secret in dev. Public-readable by default; gate
   with `BLOCKLIST_FEED_REQUIRE_AUTH=true` if needed.)
-- ⚪ **Sandbox triggers** — Joe Sandbox, ANY.RUN, Hybrid Analysis (kick
+- 🟡 **Sandbox triggers** — Joe Sandbox, ANY.RUN, Hybrid Analysis (kick
   off, store the report, link it to the originating IOC)
+  (scaffold shipped 2026-06-08: new `sandbox_reports` table in migration
+  0047 with FK to `iocs`, ANY.RUN client (`POST /v1/analysis` + `GET
+  /v1/analysis/:id`) wired with normalised verdict/score mapping,
+  umbrella service exposes `submitForAnalysis` + `refreshSandboxReport`
+  + list/detail, routes at `POST /v1/sandbox/submit` +
+  `GET /v1/sandbox/reports` + `:id/refresh`, new `sandbox_trigger`
+  playbook action type so a "high-confidence IOC observed" playbook
+  can auto-detonate to ANY.RUN. Joe Sandbox + Hybrid Analysis clients
+  + file-upload submissions + scheduled report polling deferred to
+  follow-ups.)
 - ⚪ **Ticketing** — JIRA + GitHub Issues two-way sync for investigation
   tracking
 

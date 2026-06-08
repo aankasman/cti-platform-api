@@ -319,7 +319,7 @@ export type EvaluateRules = z.infer<typeof EvaluateRulesSchema>;
 // ── Playbook route schemas ──────────────────────────────────────────
 
 const PlaybookActionSchema = z.object({
-    type: z.enum(['enrich', 'notify', 'alert', 'tag', 'warninglist_check']),
+    type: z.enum(['enrich', 'notify', 'alert', 'tag', 'warninglist_check', 'sandbox_trigger']),
     config: z.record(z.unknown()),
     // Phase 4 #3 — per-step guards. All optional; backwards-compatible with
     // legacy rows that omit them.
@@ -474,6 +474,32 @@ export const BlocklistFeedSchema = z.object({
     limit: z.coerce.number().int().min(1).max(100_000).default(10_000),
 });
 export type BlocklistFeed = z.infer<typeof BlocklistFeedSchema>;
+
+// ── Phase 4 #5 — Sandbox submissions ───────────────────────────────
+
+const SANDBOX_VENDORS = ['anyrun', 'joesandbox', 'hybridanalysis'] as const;
+const SANDBOX_SUBMIT_TYPES = ['url', 'hash', 'file', 'ioc'] as const;
+const SANDBOX_STATUS = ['queued', 'running', 'completed', 'failed', 'timeout'] as const;
+
+/** POST /v1/sandbox/submit — kick off a sandbox analysis */
+export const SandboxSubmitSchema = z.object({
+    vendor: z.enum(SANDBOX_VENDORS),
+    value: z.string().min(1, 'value is required').max(2048),
+    type: z.enum(SANDBOX_SUBMIT_TYPES),
+    iocId: z.string().uuid('iocId must be a UUID').optional(),
+    options: z.record(z.unknown()).optional(),
+});
+export type SandboxSubmit = z.infer<typeof SandboxSubmitSchema>;
+
+/** GET /v1/sandbox/reports — list filters */
+export const SandboxListFiltersSchema = z.object({
+    vendor: z.enum(SANDBOX_VENDORS).optional(),
+    status: z.enum(SANDBOX_STATUS).optional(),
+    iocId: z.string().uuid().optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type SandboxListFilters = z.infer<typeof SandboxListFiltersSchema>;
 
 // ── Phase 3 #2 — Actor activity summary ────────────────────────────
 
