@@ -1,4 +1,16 @@
-; PgBouncer userlist - format: "username" "password"
-; Password must be md5-hashed or plaintext (md5 preferred)
-; For dev: using plaintext; in production use md5 hash
+; PgBouncer userlist — REFERENCE TEMPLATE, NOT MOUNTED.
+;
+; The compose service `v3-pgbouncer` lets the edoburu image auto-generate
+; this file from DATABASE_URL + AUTH_TYPE=scram-sha-256 at container start,
+; so a custom POSTGRES_PASSWORD in .env Just Works. This template is kept
+; only for operators who want to override the auto-generated file with a
+; hand-curated list of users.
+;
+; Format: "username" "password"
+; - password may be plain text (must match AUTH_TYPE)
+; - or a SCRAM-SHA-256 / md5 hash (matching AUTH_TYPE)
+;
+; To activate, re-add the bind mount in docker-compose.yml:
+;   - ./config/pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+;
 "postgres" "postgres"
