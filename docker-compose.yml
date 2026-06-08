@@ -327,7 +327,12 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      PROMETHEUS_SCRAPE_API_KEY: ${PROMETHEUS_SCRAPE_API_KEY:?PROMETHEUS_SCRAPE_API_KEY must be set in .env (mirror an API_KEYS entry)}
+      # `:-` instead of `:?` so `docker compose config` doesn't fail at parse
+      # time when self-hosters explore the repo before setting up .env.
+      # Runtime check below in the entrypoint enforces presence — Prometheus
+      # refuses to start without the key (an empty scrape api_key would fail
+      # auth against the v3-api anyway, surfacing a less helpful error).
+      PROMETHEUS_SCRAPE_API_KEY: ${PROMETHEUS_SCRAPE_API_KEY:-}
     volumes:
       - ./config/prometheus:/etc/prometheus:ro
       - v3_prometheus:/prometheus
@@ -338,6 +343,10 @@ services:
       - -c
       - |
         set -eu
+        if [ -z "$${PROMETHEUS_SCRAPE_API_KEY:-}" ]; then
+          echo "FATAL: PROMETHEUS_SCRAPE_API_KEY must be set in .env (mirror an API_KEYS entry)" >&2
+          exit 1
+        fi
         sed "s|\$${PROMETHEUS_SCRAPE_API_KEY}|$$PROMETHEUS_SCRAPE_API_KEY|g" \
           /etc/prometheus/prometheus.template.yml > /tmp/prometheus.yml
         exec /bin/prometheus \
@@ -437,7 +446,12 @@ services:
       - REDIS_CACHE_URL=redis://v3-redis-cache:6379
       - REDIS_QUEUE_URL=redis://v3-redis-queue:6379
       - OPENSEARCH_URL=http://v3-opensearch:9200
-      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env (see .env.example)}
+      # JWT_SECRET — enforced at runtime by apps/api/src/middleware/auth.ts
+      # `validateAuthConfig()` (called from index.ts:162). Using `:-` instead of
+      # `:?` so `docker compose config` / `ps` / `logs` don't fail at parse
+      # time for self-hosters who haven't set up their .env yet — the API will
+      # still refuse to boot with an empty JWT_SECRET.
+      - JWT_SECRET=${JWT_SECRET:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
       - NEO4J_URI=bolt://v3-neo4j:7687
       - NEO4J_USER=neo4j
@@ -462,6 +476,39 @@ services:
       - SHODAN_API_KEY=${SHODAN_API_KEY:-}
       - IPINFO_API_KEY=${IPINFO_API_KEY:-}
       - ZOOMEYE_API_KEY=${ZOOMEYE_API_KEY:-}
+      # ── Feed API Keys ──
+      # These keys also have to live in this block (not just v3-worker)
+      # because BullMQ-dispatched "Run now" feed-sync jobs are processed
+      # by the API process (apps/api/src/startup.ts spawns the worker pool
+      # in-process). Without these, manual sync triggers silently insert
+      # `feed_sync_runs` rows with `items_failed=1, error_details=NULL`
+      # while the scheduled in-process feeds in v3-worker work fine —
+      # disguising the bug from cursory inspection.
+      - ALIENVAULT_API_KEY=${ALIENVAULT_API_KEY:-}
+      - NVD_API_KEY=${NVD_API_KEY:-}
+      - PHISHTANK_API_KEY=${PHISHTANK_API_KEY:-}
+      # abuse.ch issues ONE auth key that covers ThreatFox + URLhaus +
+      # MalwareBazaar. The worker code reads each per-feed env var, so
+      # we point all three at ABUSECH_API_KEY here. Self-hosters only
+      # set ABUSECH_API_KEY in .env.
+      - THREATFOX_AUTH_KEY=${ABUSECH_API_KEY:-}
+      - URLHAUS_AUTH_KEY=${ABUSECH_API_KEY:-}
+      - MALWAREBAZAAR_AUTH_KEY=${ABUSECH_API_KEY:-}
+      # ── OAuth & Dashboard wiring ──
+      # OAuth callback URLs are built from `API_PUBLIC_URL`, dashboard
+      # post-login redirects go to `DASHBOARD_URL`, and `ADMIN_EMAILS`
+      # gates admin-role auto-promotion on first OAuth sign-in. All
+      # were silently dropped on first deploy: documented in `.env.example`
+      # and read by the API code, but never forwarded into the container —
+      # the OAuth providers endpoint returned `{google: false, github: false}`
+      # despite keys being present in .env.
+      - DASHBOARD_URL=${DASHBOARD_URL:-http://localhost:3000}
+      - API_PUBLIC_URL=${API_PUBLIC_URL:-http://localhost:3001}
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      - GITHUB_OAUTH_CLIENT_ID=${GITHUB_OAUTH_CLIENT_ID:-}
+      - GITHUB_OAUTH_CLIENT_SECRET=${GITHUB_OAUTH_CLIENT_SECRET:-}
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-}
       # ── Keycloak SSO (Docker-internal URL) ──
       - KEYCLOAK_URL=http://v3-keycloak:8080
       - KEYCLOAK_REALM=${KEYCLOAK_REALM:-rinjani}
@@ -522,9 +569,20 @@ services:
       - IPINFO_API_KEY=${IPINFO_API_KEY:-}
       # ── Feed Sync API Keys ──
       - ALIENVAULT_API_KEY=${ALIENVAULT_API_KEY:-}
-      - THREATFOX_AUTH_KEY=${ABUSECH_AUTH_KEY:-}
-      - URLHAUS_AUTH_KEY=${ABUSECH_AUTH_KEY:-}
-      - MALWAREBAZAAR_AUTH_KEY=${ABUSECH_AUTH_KEY:-}
+      # abuse.ch issues ONE auth key for ThreatFox + URLhaus +
+      # MalwareBazaar. Worker code reads per-feed env vars, so all three
+      # point at ABUSECH_API_KEY (the canonical name documented in
+      # .env.example and used by the v3-api block above). Was previously
+      # `${ABUSECH_AUTH_KEY:-}` — wrong variable name, never populated,
+      # silent zero-IOC feed runs every cron tick on first deploy.
+      - THREATFOX_AUTH_KEY=${ABUSECH_API_KEY:-}
+      - URLHAUS_AUTH_KEY=${ABUSECH_API_KEY:-}
+      - MALWAREBAZAAR_AUTH_KEY=${ABUSECH_API_KEY:-}
+      # NVD published its public API key in 2024. PhishTank's registration
+      # is gated. Both need forwarding so the worker can hit the upstream
+      # APIs without bailing out on "key not configured".
+      - NVD_API_KEY=${NVD_API_KEY:-}
+      - PHISHTANK_API_KEY=${PHISHTANK_API_KEY:-}
     depends_on:
       v3-pgbouncer:
         condition: service_healthy
