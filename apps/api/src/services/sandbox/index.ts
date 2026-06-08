@@ -16,6 +16,8 @@ import {
 } from '@rinjani/db/schema';
 import { createLogger } from '../../lib/logger';
 import { anyRunSubmit, anyRunGetReport } from './anyrun';
+import { joeSubmit, joeGetReport } from './joesandbox';
+import { haSubmit, haGetReport } from './hybridanalysis';
 
 const log = createLogger('Sandbox');
 
@@ -73,8 +75,9 @@ async function dispatchSubmit(input: SubmitInput): Promise<{ ok: boolean; taskId
         case 'anyrun':
             return anyRunSubmit({ value: input.value, type: input.type, options: input.options });
         case 'joesandbox':
+            return joeSubmit({ value: input.value, type: input.type, options: input.options });
         case 'hybridanalysis':
-            return { ok: false, error: `${input.vendor} client not yet implemented (scaffold ships ANY.RUN only)` };
+            return haSubmit({ value: input.value, type: input.type, options: input.options });
     }
 }
 
@@ -88,7 +91,9 @@ export async function refreshSandboxReport(id: string): Promise<SandboxReport | 
     const r = await (async () => {
         switch (row.vendor) {
             case 'anyrun': return anyRunGetReport(row.vendorTaskId!);
-            default: return { ok: false, error: `${row.vendor} polling not implemented` };
+            case 'joesandbox': return joeGetReport(row.vendorTaskId!);
+            case 'hybridanalysis': return haGetReport(row.vendorTaskId!);
+            default: return { ok: false, error: `unknown vendor "${row.vendor}"` };
         }
     })();
 
