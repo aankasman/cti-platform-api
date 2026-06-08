@@ -321,6 +321,11 @@ export type EvaluateRules = z.infer<typeof EvaluateRulesSchema>;
 const PlaybookActionSchema = z.object({
     type: z.enum(['enrich', 'notify', 'alert', 'tag', 'warninglist_check']),
     config: z.record(z.unknown()),
+    // Phase 4 #3 — per-step guards. All optional; backwards-compatible with
+    // legacy rows that omit them.
+    if: z.record(z.unknown()).optional(),
+    continueOnError: z.boolean().optional(),
+    label: z.string().max(200).optional(),
 });
 
 /** POST /v1/playbooks — create a new playbook */

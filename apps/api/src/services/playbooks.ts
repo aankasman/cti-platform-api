@@ -16,6 +16,7 @@ import { playbooks, playbookExecutions, iocs, type PlaybookAction, type Playbook
 import { and, desc, eq, sql } from '@rinjani/db';
 import { getPostgres } from '../lib/db/clients';
 import { createLogger } from '../lib/logger';
+import { evaluateCondition, type PlaybookStepGuards } from '@rinjani/core/playbookDsl';
 
 const log = createLogger('Playbooks');
 
@@ -129,25 +130,47 @@ export async function executePlaybook(
     let finalError: string | null = null;
 
     try {
-        // Execute actions in order
+        // Execute actions in order. Each step may:
+        //   - have an `if` guard → evaluated against triggerData;
+        //                          if false, the step is skipped (result.success=true, .skipped=true)
+        //   - opt into continueOnError → a failure doesn't short-circuit
         for (const action of (pb.actions as PlaybookAction[])) {
+            const guards = (action as PlaybookAction & PlaybookStepGuards);
+
+            if (guards.if !== undefined && !evaluateCondition(guards.if, triggerData)) {
+                results.push({
+                    action: action.type,
+                    success: true,
+                    result: { skipped: true, reason: 'guard condition false', label: guards.label ?? null },
+                    executedAt: new Date().toISOString(),
+                });
+                continue;
+            }
+
             const result = await executeAction(action, triggerData);
+            // Surface the label in result so the audit shows analyst-friendly names.
+            if (guards.label) (result as PlaybookActionResult & { label?: string }).label = guards.label;
             results.push(result);
 
-            // Stop on failure (short-circuit)
             if (!result.success) {
+                if (guards.continueOnError) {
+                    log.warn('Playbook action failed, continuing (continueOnError=true)', {
+                        playbookId, action: action.type, error: result.error,
+                    });
+                    continue;
+                }
                 log.warn('Playbook action failed, stopping execution', {
-                    playbookId,
-                    action: action.type,
-                    error: result.error,
+                    playbookId, action: action.type, error: result.error,
                 });
                 break;
             }
         }
 
-        const allSuccess = results.every(r => r.success);
+        // Only non-skipped failures count toward the playbook's overall status.
+        const realFailures = results.filter(r => !r.success);
+        const allSuccess = realFailures.length === 0;
         finalStatus = allSuccess ? 'completed' : 'failed';
-        finalError = allSuccess ? null : results.find(r => !r.success)?.error || null;
+        finalError = allSuccess ? null : realFailures[0].error || null;
     } catch (err) {
         finalStatus = 'failed';
         finalError = (err as Error).message;
@@ -220,8 +243,9 @@ export async function evaluatePlaybooks(
     const allMatching = [...matchingPlaybooks, ...wildcardPlaybooks];
 
     for (const pb of allMatching) {
-        // Check conditions
-        if (!matchesConditions(pb.conditions as Record<string, unknown>, eventData)) {
+        // Check conditions via the new DSL evaluator (Phase 4 #3).
+        // Legacy flat shape stays supported via matchValue() inside the evaluator.
+        if (!evaluateCondition(pb.conditions as Record<string, unknown>, eventData)) {
             continue;
         }
 
@@ -371,37 +395,8 @@ async function executeAction(
     }
 }
 
-// ============================================================================
-// Condition Matching
-// ============================================================================
-
-/**
- * Simple condition matching: checks if eventData matches all conditions.
- * Supports arrays (any match) and direct value comparison.
- *
- * Example conditions:
- *   { severity: ["high", "critical"] }  → matches if eventData.severity is "high" or "critical"
- *   { source: "alienvault" }            → matches if eventData.source === "alienvault"
- *   { type: ["ip", "domain"] }          → matches if eventData.type is "ip" or "domain"
- */
-function matchesConditions(
-    conditions: Record<string, unknown>,
-    eventData: Record<string, unknown>
-): boolean {
-    if (!conditions || Object.keys(conditions).length === 0) return true;
-
-    for (const [key, expected] of Object.entries(conditions)) {
-        const actual = eventData[key];
-        if (actual === undefined) continue; // Skip conditions for missing fields
-
-        if (Array.isArray(expected)) {
-            // Array condition: any value must match
-            if (!expected.includes(actual)) return false;
-        } else {
-            // Direct comparison
-            if (actual !== expected) return false;
-        }
-    }
-
-    return true;
-}
+// Legacy in-file matchesConditions() removed — superseded by
+// `evaluateCondition()` from `@rinjani/core/playbookDsl` which
+// supports the same flat shape AND a richer operator vocabulary
+// ($and / $or / $not / $in / $nin / $gte / $lt / $exists / $regex)
+// plus dotted-key nested traversal.

@@ -230,7 +230,7 @@ surfaces rather than a generic chat widget.
 
 ## Phase 4 · Outbound integrations
 
-**Target window: 2026-12 → 2027-02**  ·  **Status: 🟡 In flight** (3 of 6 items shipped — SIEM CEF/LEEF/ECS codecs + Fortinet/PAN/Cisco blocklist feeds shipped 2026-06-08 AM; Teams/Discord/PagerDuty notification adapters + rule DSL shipped 2026-06-08 PM)
+**Target window: 2026-12 → 2027-02**  ·  **Status: 🟡 In flight** (4 of 6 items shipped — SIEM CEF/LEEF/ECS codecs + Fortinet/PAN/Cisco blocklist feeds shipped 2026-06-08 AM; Teams/Discord/PagerDuty notification adapters + rule DSL + playbook condition DSL with step guards shipped 2026-06-08 PM)
 
 Make the platform an active participant in the analyst's stack, not a
 walled garden.
@@ -251,10 +251,19 @@ walled garden.
   `@rinjani/core/siemFormatters`). A direct Splunk HEC client / Elastic
   bulk push / Sentinel Log Analytics API is the open work — the codecs
   are the hard part, those are thin HTTP clients on top.
-- ⚪ **SOAR-style playbooks** — our Workbench / FlowProducer pattern is
-  already a playbook engine; expose it as a `Trigger → Steps` DSL  
-  (engine + flat conditions + ordered actions shipped pre-Phase-4; the
-  richer DSL is the open work for this item.)
+- 🟢 **SOAR-style playbooks DSL**
+  (engine existed pre-Phase-4 with trigger event + flat conditions +
+  ordered actions; shipped 2026-06-08 PM: condition DSL extended via
+  `@rinjani/core/playbookDsl` with operator vocabulary
+  `$and / $or / $not / $eq / $ne / $in / $nin / $gt / $gte / $lt / $lte /
+  $exists / $regex` plus dotted-key nested traversal — e.g.
+  `enrichment.score: { $gte: 80 }`. Per-step guards: each action can
+  carry `if`, `continueOnError`, and `label`. Skipped steps record a
+  `result.skipped=true` audit entry rather than counting as a failure.
+  Legacy flat-shape conditions in existing rows keep working. Bug fix
+  alongside: legacy matcher silently skipped conditions for missing
+  fields — the new evaluator rejects (use `$exists: false` to assert
+  absence explicitly).)
 - 🟢 **Blocklist exports** — CSV, MISP feed, STIX, Fortinet, Palo Alto,
   Cisco firewall formats; cached, signed, served at stable subscribable
   URLs.
