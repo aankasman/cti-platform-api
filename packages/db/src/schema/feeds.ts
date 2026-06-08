@@ -19,6 +19,11 @@ export const iocs = pgTable('iocs', {
     source: text('source').notNull(), // alienvault, abusessl, virustotal, misp
     threatType: text('threat_type'), // malware, c2, phishing, ransomware, botnet
     confidence: integer('confidence'), // 0-100
+    // Composite risk score (0-100) written by the scoring engine and read by
+    // alerts / reputation / landscape endpoints. Distinct from `confidence`:
+    // confidence reflects source reliability, risk_score reflects the
+    // multi-signal weighting (KEV match, VT detections, EPSS, age, etc.).
+    riskScore: integer('risk_score').default(0),
     severity: text('severity'), // low, medium, high, critical
     firstSeen: timestamp('first_seen'),
     lastSeen: timestamp('last_seen'),
