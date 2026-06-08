@@ -119,7 +119,7 @@ Pluggable enricher pattern — runs on ingest *and* on-demand via API.
 
 ## Phase 2 · STIX 2.1 first-class & Federation
 
-**Target window: 2026-08 → 2026-09**  ·  **Status: 🟡 In flight** (1 of 5 items shipped — provenance/TLP wired into export 2026-06-08)
+**Target window: 2026-08 → 2026-09**  ·  **Status: 🟡 In flight** (2 of 5 items shipped — provenance/TLP wired into export + bundle import expanded to 7 SDO types incl. malware + relationships, shipped 2026-06-08)
 
 We speak TAXII but the internal model is still IOC-centric. STIX as
 source of truth opens up federation between Rinjani instances and with
@@ -130,7 +130,16 @@ MISP / OpenCTI / vendor stacks.
   `infrastructure`, `note`, `opinion`
 - ⚪ Typed relationships (`uses`, `targets`, `attributed-to`,
   `mitigates`, `derived-from`) — Neo4j is already wired for this
-- ⚪ Bundle import/export (JSON + `bundle.tar`)
+- 🟡 **Bundle import/export** — JSON works both ways; `.tar` packing still
+  pending.
+  (shipped 2026-06-08: import expanded from 3 SDO types to 7 — adds
+  `malware` → `malware` table and `relationship` → `relationships` table
+  with full ref-resolution so STIX bundles round-trip with attribution
+  intact. `identity` + `marking-definition` are counted but not
+  persisted; `attack-pattern`, `campaign`, `tool`, `course-of-action`,
+  `infrastructure`, `note`, `opinion` are bucketed into `skippedTypes`
+  for visibility — they need entity tables (item 1) before they can be
+  imported.)
 - ⚪ **TAXII 2.1 push** (we currently only pull) — enables federation
   between two Rinjani instances, or pushing into MISP
 - 🟢 **Confidence + TLP marking propagation**

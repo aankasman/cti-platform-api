@@ -74,11 +74,13 @@ interface ImportResult {
         indicators: number;
         vulnerabilities: number;
         threatActors: number;
+        malware: number;
         relationships: number;
         identities: number;
         markings: number;
         skipped: number;
     };
+    skippedTypes: Record<string, number>;
     errors: Array<{ objectId: string; error: string }>;
     dryRun: boolean;
 }
@@ -162,11 +164,53 @@ stixPipeline.post('/stix/validate', requireAuth, async (c) => {
 // Core Import
 // ============================================================================
 
+/**
+ * Build a lookup from STIX object id ("indicator--abc", "malware--xyz") to
+ * our internal {entityType, internalId} after first-pass inserts complete.
+ * Used by the relationship pass to translate STIX source_ref / target_ref
+ * into our (source_type, source_id, target_type, target_id) shape.
+ */
+type RefMap = Map<string, { entityType: string; internalId: string }>;
+
+const STIX_TYPE_TO_INTERNAL: Record<string, string> = {
+    'indicator': 'ioc',
+    'vulnerability': 'vulnerability',
+    'threat-actor': 'threat_actor',
+    'malware': 'malware',
+    'attack-pattern': 'technique',
+    'campaign': 'campaign',
+    'course-of-action': 'mitigation',
+    'tool': 'tool',
+    'identity': 'identity',
+    'infrastructure': 'infrastructure',
+};
+
+function stripStixIdPrefix(stixId: string): string {
+    const idx = stixId.indexOf('--');
+    return idx >= 0 ? stixId.slice(idx + 2) : stixId;
+}
+
+/**
+ * Fallback resolver: when a relationship references an SDO not present in
+ * the same bundle (or one we don't persist as a top-level entity, like a
+ * technique referenced by MITRE id), derive the (entityType, id) from the
+ * STIX id prefix and uuid suffix.
+ */
+function deriveRef(stixId: string): { entityType: string; internalId: string } | null {
+    const idx = stixId.indexOf('--');
+    if (idx < 0) return null;
+    const prefix = stixId.slice(0, idx);
+    const entityType = STIX_TYPE_TO_INTERNAL[prefix];
+    if (!entityType) return null;
+    return { entityType, internalId: stixId.slice(idx + 2) };
+}
+
 async function importSTIXBundle(bundle: STIXBundle, dryRun: boolean): Promise<ImportResult> {
     const result: ImportResult = {
         bundleId: bundle.id,
         totalObjects: bundle.objects.length,
-        imported: { indicators: 0, vulnerabilities: 0, threatActors: 0, relationships: 0, identities: 0, markings: 0, skipped: 0 },
+        imported: { indicators: 0, vulnerabilities: 0, threatActors: 0, malware: 0, relationships: 0, identities: 0, markings: 0, skipped: 0 },
+        skippedTypes: {},
         errors: [],
         dryRun,
     };
@@ -177,6 +221,10 @@ async function importSTIXBundle(bundle: STIXBundle, dryRun: boolean): Promise<Im
         list.push(obj);
         grouped.set(obj.type, list);
     }
+
+    // Bookkeeping for the relationship pass: every successfully-persisted
+    // object registers its STIX id → internal (entityType, id) here.
+    const refMap: RefMap = new Map();
 
     // Process indicators → IOCs
     for (const indicator of (grouped.get('indicator') || [])) {
@@ -193,7 +241,7 @@ async function importSTIXBundle(bundle: STIXBundle, dryRun: boolean): Promise<Im
                 const rawData = JSON.stringify({ stixId: indicator.id, bundleId: bundle.id }).replace(/'/g, "''");
                 const threatType = indicator.indicator_types?.[0] ? `'${esc(indicator.indicator_types[0])}'` : 'NULL';
 
-                await db.execute(sql.raw(`
+                const inserted = await db.execute(sql.raw(`
                     INSERT INTO iocs (type, value, source, threat_type, confidence, severity, first_seen, last_seen, tags, raw_data)
                     VALUES ('${parsed.type}', '${esc(parsed.value)}', 'stix-import', ${threatType},
                             ${stixConfidenceToInternal(indicator.confidence)},
@@ -205,7 +253,10 @@ async function importSTIXBundle(bundle: STIXBundle, dryRun: boolean): Promise<Im
                         confidence = GREATEST(iocs.confidence, EXCLUDED.confidence),
                         last_seen  = GREATEST(iocs.last_seen, EXCLUDED.last_seen),
                         updated_at = NOW()
-                `));
+                    RETURNING id
+                `)) as unknown as { id: string }[];
+                const internalId = inserted?.[0]?.id;
+                if (internalId) refMap.set(indicator.id, { entityType: 'ioc', internalId });
             }
             result.imported.indicators++;
         } catch (err) {
@@ -222,7 +273,7 @@ async function importSTIXBundle(bundle: STIXBundle, dryRun: boolean): Promise<Im
             if (!dryRun) {
                 const esc = (s: string) => s.replace(/'/g, "''");
                 const rawData = JSON.stringify({ stixId: vuln.id, name: vuln.name, bundleId: bundle.id }).replace(/'/g, "''");
-                await db.execute(sql.raw(`
+                const inserted = await db.execute(sql.raw(`
                     INSERT INTO vulnerabilities (cve_id, description, severity, cvss_score, published_date, raw_data)
                     VALUES ('${cveId}', '${esc(vuln.description || '')}',
                             ${vuln.labels?.[0] ? `'${vuln.labels[0]}'` : 'NULL'},
@@ -232,7 +283,10 @@ async function importSTIXBundle(bundle: STIXBundle, dryRun: boolean): Promise<Im
                     ON CONFLICT (cve_id) DO UPDATE SET
                         description = COALESCE(EXCLUDED.description, vulnerabilities.description),
                         updated_at = NOW()
-                `));
+                    RETURNING id
+                `)) as unknown as { id: string }[];
+                const internalId = inserted?.[0]?.id;
+                if (internalId) refMap.set(vuln.id, { entityType: 'vulnerability', internalId });
             }
             result.imported.vulnerabilities++;
         } catch (err) {
@@ -249,7 +303,7 @@ async function importSTIXBundle(bundle: STIXBundle, dryRun: boolean): Promise<Im
                     ? `ARRAY[${actor.aliases.map(a => `'${esc(a)}'`).join(',')}]`
                     : 'NULL';
                 const rawData = JSON.stringify({ stixId: actor.id, bundleId: bundle.id }).replace(/'/g, "''");
-                await db.execute(sql.raw(`
+                const inserted = await db.execute(sql.raw(`
                     INSERT INTO threat_actors (name, description, aliases, sophistication, resource_level, primary_motivation, raw_data)
                     VALUES ('${esc(actor.name || 'Unknown')}', '${esc(actor.description || '')}',
                             ${aliases},
@@ -260,7 +314,10 @@ async function importSTIXBundle(bundle: STIXBundle, dryRun: boolean): Promise<Im
                     ON CONFLICT (name) DO UPDATE SET
                         description = COALESCE(EXCLUDED.description, threat_actors.description),
                         updated_at = NOW()
-                `));
+                    RETURNING id
+                `)) as unknown as { id: string }[];
+                const internalId = inserted?.[0]?.id;
+                if (internalId) refMap.set(actor.id, { entityType: 'threat_actor', internalId });
             }
             result.imported.threatActors++;
         } catch (err) {
@@ -268,15 +325,91 @@ async function importSTIXBundle(bundle: STIXBundle, dryRun: boolean): Promise<Im
         }
     }
 
-    // Count non-processed types
-    const processedTypes = new Set(['indicator', 'vulnerability', 'threat-actor']);
-    for (const [type, objects] of grouped) {
-        if (!processedTypes.has(type)) {
-            if (type === 'relationship') result.imported.relationships += objects.length;
-            else if (type === 'identity') result.imported.identities += objects.length;
-            else if (type === 'marking-definition') result.imported.markings += objects.length;
-            else result.imported.skipped += objects.length;
+    // Process malware SDOs → malware table
+    for (const mw of (grouped.get('malware') || [])) {
+        try {
+            if (!dryRun) {
+                const esc = (s: string) => s.replace(/'/g, "''");
+                const aliases = mw.aliases?.length
+                    ? `ARRAY[${mw.aliases.map(a => `'${esc(a)}'`).join(',')}]::jsonb`
+                    : `'[]'::jsonb`;
+                const mwTypes = (mw as unknown as { malware_types?: string[] }).malware_types;
+                const malwareTypes = Array.isArray(mwTypes) && mwTypes.length > 0
+                    ? `'${JSON.stringify(mwTypes).replace(/'/g, "''")}'::jsonb`
+                    : `'[]'::jsonb`;
+                const isFamily = typeof mw.is_family === 'boolean' ? `'${mw.is_family}'` : 'NULL';
+                const refs = JSON.stringify(mw.external_references || []).replace(/'/g, "''");
+                await db.execute(sql.raw(`
+                    INSERT INTO malware (stix_id, name, description, malware_types, is_family, aliases, external_references, stix_created, stix_modified, synced_at)
+                    VALUES ('${esc(mw.id)}', '${esc(mw.name || 'Unknown')}', '${esc(mw.description || '')}',
+                            ${malwareTypes}, ${isFamily}, ${aliases.replace('::jsonb', '')}::jsonb,
+                            '${refs}'::jsonb,
+                            ${mw.created ? `'${mw.created}'` : 'NULL'},
+                            ${mw.modified ? `'${mw.modified}'` : 'NULL'},
+                            NOW())
+                    ON CONFLICT (stix_id) DO UPDATE SET
+                        description = COALESCE(EXCLUDED.description, malware.description),
+                        synced_at = NOW(),
+                        updated_at = NOW()
+                    RETURNING id
+                `));
+                refMap.set(mw.id, { entityType: 'malware', internalId: stripStixIdPrefix(mw.id) });
+            }
+            result.imported.malware++;
+        } catch (err) {
+            result.errors.push({ objectId: mw.id, error: (err as Error).message });
         }
+    }
+
+    // Process relationships AFTER all other objects so refMap is populated.
+    // STIX `relationship_type` is preserved verbatim — Phase 2 #2 will enum-constrain.
+    for (const rel of (grouped.get('relationship') || [])) {
+        try {
+            const srcRef = rel.source_ref as string | undefined;
+            const tgtRef = rel.target_ref as string | undefined;
+            const relType = rel.relationship_type;
+            if (!srcRef || !tgtRef || !relType) {
+                result.errors.push({ objectId: rel.id, error: 'relationship missing source_ref / target_ref / relationship_type' });
+                continue;
+            }
+            // Try to resolve via refMap; fall back to deriving entity type from the STIX prefix
+            // and using the bare UUID portion of the STIX id as the foreign-side id.
+            const src = refMap.get(srcRef) ?? deriveRef(srcRef);
+            const tgt = refMap.get(tgtRef) ?? deriveRef(tgtRef);
+            if (!src || !tgt) {
+                result.errors.push({ objectId: rel.id, error: `unresolvable refs: ${srcRef} → ${tgtRef}` });
+                continue;
+            }
+
+            if (!dryRun) {
+                const esc = (s: string) => s.replace(/'/g, "''");
+                const desc = typeof rel.description === 'string' ? `'${esc(rel.description)}'` : 'NULL';
+                const confidence = typeof rel.confidence === 'number'
+                    ? Math.max(0, Math.min(100, rel.confidence))
+                    : 50;
+                await db.execute(sql.raw(`
+                    INSERT INTO relationships (source_type, source_id, relationship_type, target_type, target_id, description, confidence, source)
+                    VALUES ('${esc(src.entityType)}', '${esc(src.internalId)}', '${esc(relType)}',
+                            '${esc(tgt.entityType)}', '${esc(tgt.internalId)}',
+                            ${desc}, ${confidence}, 'stix-import')
+                `));
+            }
+            result.imported.relationships++;
+        } catch (err) {
+            result.errors.push({ objectId: rel.id, error: (err as Error).message });
+        }
+    }
+
+    // Identity + marking-definition SDOs aren't persisted; we just count them.
+    result.imported.identities = (grouped.get('identity') || []).length;
+    result.imported.markings = (grouped.get('marking-definition') || []).length;
+
+    // Categorise unsupported types for visibility (rather than the blunt `skipped` counter)
+    const handled = new Set(['indicator', 'vulnerability', 'threat-actor', 'malware', 'relationship', 'identity', 'marking-definition']);
+    for (const [type, objs] of grouped) {
+        if (handled.has(type)) continue;
+        result.skippedTypes[type] = objs.length;
+        result.imported.skipped += objs.length;
     }
 
     log.info('STIX bundle imported', {
@@ -284,6 +417,11 @@ async function importSTIXBundle(bundle: STIXBundle, dryRun: boolean): Promise<Im
         indicators: result.imported.indicators,
         vulnerabilities: result.imported.vulnerabilities,
         threatActors: result.imported.threatActors,
+        malware: result.imported.malware,
+        relationships: result.imported.relationships,
+        identities: result.imported.identities,
+        markings: result.imported.markings,
+        skippedTypes: result.skippedTypes,
         errors: result.errors.length,
     });
 
