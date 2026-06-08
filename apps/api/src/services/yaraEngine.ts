@@ -14,8 +14,25 @@
  */
 
 import { createLogger } from '../lib/logger';
+import { db, eq, and } from '@rinjani/db';
+import { detectionRules } from '@rinjani/db/schema';
 
 const log = createLogger('YARAEngine');
+
+const SEVERITY_TO_DB: Record<YARARule['severity'], string> = {
+    critical: 'critical',
+    high: 'high',
+    medium: 'medium',
+    low: 'low',
+    info: 'informational',
+};
+const DB_TO_SEVERITY: Record<string, YARARule['severity']> = {
+    critical: 'critical',
+    high: 'high',
+    medium: 'medium',
+    low: 'low',
+    informational: 'info',
+};
 
 // ============================================================================
 // Types
@@ -162,6 +179,10 @@ const BUILTIN_RULES: YARARule[] = [
 
 /**
  * Initialize the engine with built-in rules.
+ *
+ * Order: built-ins → disk JSON (legacy) → DB-persisted custom rules.
+ * Later sources override earlier ones on name collision so operators can
+ * customise a built-in rule by persisting one with the same name.
  */
 export function initYARAEngine(): void {
     ruleStore.clear();
@@ -169,12 +190,103 @@ export function initYARAEngine(): void {
         ruleStore.set(rule.name, rule);
     }
 
-    // Try to load custom rules from disk
+    // Try to load custom rules from disk (legacy path, still supported)
     loadRulesFromDisk().catch(() => {
-        log.info('No custom YARA rules directory found, using built-in rules only');
+        log.info('No custom YARA rules directory found, skipping disk load');
     });
 
-    log.info(`YARA engine initialized with ${ruleStore.size} rules`);
+    // Load persisted rules from the detection_rules table — fire-and-forget;
+    // the API can serve early traffic with just built-ins while DB hydrates.
+    loadPersistedRules().catch((err) => {
+        log.warn('Failed to load persisted YARA rules from DB', { error: (err as Error).message });
+    });
+
+    log.info(`YARA engine initialized with ${ruleStore.size} rules (built-ins only; persisted rules hydrate async)`);
+}
+
+/**
+ * Load all `rule_type = 'yara'` rows from `detection_rules` and add them
+ * to the in-memory store. Built-in rules are not stored in the DB, so
+ * persisted-name collisions take precedence (operator override).
+ */
+async function loadPersistedRules(): Promise<void> {
+    const rows = await db.select().from(detectionRules).where(eq(detectionRules.ruleType, 'yara'));
+    let loaded = 0;
+    for (const row of rows) {
+        const rule = rowToRule(row);
+        if (rule) {
+            ruleStore.set(rule.name, rule);
+            loaded++;
+        }
+    }
+    if (loaded > 0) log.info(`Loaded ${loaded} persisted YARA rule(s) from DB`);
+}
+
+function rowToRule(row: typeof detectionRules.$inferSelect): YARARule | null {
+    const detection = row.detection as { strings?: YARAString[]; condition?: string } | undefined;
+    if (!detection?.strings || !detection.condition) return null;
+    const meta = (row.meta || {}) as Record<string, unknown>;
+    return {
+        name: row.name,
+        description: row.description ?? '',
+        author: typeof meta.author === 'string' ? meta.author : 'persisted',
+        tags: row.tags ?? [],
+        severity: DB_TO_SEVERITY[row.severity ?? 'medium'] ?? 'medium',
+        strings: detection.strings,
+        condition: detection.condition,
+        createdAt: row.createdAt.toISOString(),
+        enabled: typeof meta.enabled === 'boolean' ? meta.enabled : true,
+    };
+}
+
+const yaraUuid = (name: string) => `yara:${name}`;
+
+/** Persist a rule to `detection_rules`. Idempotent on `uuid = yara:<name>`. */
+async function persistRule(rule: YARARule): Promise<void> {
+    const uuid = yaraUuid(rule.name);
+    const detection = { strings: rule.strings, condition: rule.condition };
+    const meta = { author: rule.author, enabled: rule.enabled };
+
+    const existing = await db.select({ id: detectionRules.id })
+        .from(detectionRules)
+        .where(eq(detectionRules.uuid, uuid))
+        .limit(1);
+
+    if (existing.length > 0) {
+        await db.update(detectionRules)
+            .set({
+                name: rule.name,
+                description: rule.description,
+                severity: SEVERITY_TO_DB[rule.severity],
+                status: 'stable',
+                tags: rule.tags,
+                detection,
+                meta,
+                syncedAt: new Date(),
+                updatedAt: new Date(),
+            })
+            .where(eq(detectionRules.uuid, uuid));
+    } else {
+        await db.insert(detectionRules).values({
+            ruleType: 'yara',
+            uuid,
+            name: rule.name,
+            description: rule.description,
+            severity: SEVERITY_TO_DB[rule.severity],
+            status: 'stable',
+            tags: rule.tags,
+            detection,
+            meta,
+            externalReferences: [],
+            source: 'user',
+            syncedAt: new Date(),
+        });
+    }
+}
+
+async function deletePersistedRule(name: string): Promise<void> {
+    await db.delete(detectionRules)
+        .where(and(eq(detectionRules.uuid, yaraUuid(name)), eq(detectionRules.ruleType, 'yara')));
 }
 
 /**
@@ -342,20 +454,40 @@ export function scanValue(input: string): ScanResult {
     };
 }
 
+function isBuiltin(name: string): boolean {
+    return BUILTIN_RULES.some(r => r.name === name);
+}
+
 /**
- * Add a new rule to the engine.
+ * Add a new rule to the engine and persist it to `detection_rules`.
+ * Built-in names can be shadowed; the persisted row takes precedence on
+ * the next reload.
  */
-export function addRule(rule: YARARule): void {
+export async function addRule(rule: YARARule): Promise<void> {
     ruleStore.set(rule.name, rule);
+    try {
+        await persistRule(rule);
+    } catch (err) {
+        log.warn(`YARA rule added in-memory but DB persist failed: ${rule.name}`, { error: (err as Error).message });
+    }
     log.info(`YARA rule added: ${rule.name}`);
 }
 
 /**
- * Remove a rule by name.
+ * Remove a rule by name. Built-ins cannot be removed (they re-seed on
+ * every process restart); for them this is a no-op returning false.
  */
-export function removeRule(name: string): boolean {
+export async function removeRule(name: string): Promise<boolean> {
+    if (isBuiltin(name)) return false;
     const deleted = ruleStore.delete(name);
-    if (deleted) log.info(`YARA rule removed: ${name}`);
+    if (deleted) {
+        try {
+            await deletePersistedRule(name);
+        } catch (err) {
+            log.warn(`YARA rule removed in-memory but DB delete failed: ${name}`, { error: (err as Error).message });
+        }
+        log.info(`YARA rule removed: ${name}`);
+    }
     return deleted;
 }
 
@@ -374,13 +506,38 @@ export function getRule(name: string): YARARule | undefined {
 }
 
 /**
- * Toggle a rule's enabled state.
+ * Toggle a rule's enabled state. For persisted custom rules, the new
+ * `enabled` value is written to `detection_rules.meta.enabled` so it
+ * survives a restart. Built-in toggle survives only until the process
+ * restarts (they always re-seed enabled per BUILTIN_RULES).
  */
-export function toggleRule(name: string, enabled: boolean): boolean {
+export async function toggleRule(name: string, enabled: boolean): Promise<boolean> {
     const rule = ruleStore.get(name);
     if (!rule) return false;
     rule.enabled = enabled;
+    if (!isBuiltin(name)) {
+        try {
+            await persistRule(rule);
+        } catch (err) {
+            log.warn(`YARA toggle persist failed for ${name}`, { error: (err as Error).message });
+        }
+    }
     return true;
+}
+
+/**
+ * Scan binary sample bytes. Converts to a latin1 string so that:
+ *   - hex patterns ($s1 = { DE AD BE EF }) match raw bytes correctly via
+ *     `\xDE\xAD\xBE\xEF` regex escapes
+ *   - text/regex patterns still match ASCII fragments unchanged
+ * The encoded length cap (default 25 MiB) bounds memory + scan time.
+ */
+export function scanBytes(buf: Buffer, maxBytes = 25 * 1024 * 1024): ScanResult {
+    if (buf.length > maxBytes) {
+        throw new Error(`sample exceeds ${maxBytes} byte limit`);
+    }
+    const asString = buf.toString('latin1');
+    return scanValue(asString);
 }
 
 /**

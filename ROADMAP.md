@@ -34,7 +34,7 @@ Last reviewed: **2026-06-05**.
 
 ## Phase 1 · Enrichment & Detection-as-Code
 
-**Target window: 2026-06 → 2026-07**  ·  **Status: 🟡 In flight** (9 of 11 items shipped — VirusTotal v3 + AbuseIPDB already in master since pre-Phase-1; EPSS, Shodan, inKev shipped 2026-06-05; urlscan.io + GreyNoise shipped 2026-06-08; Sigma ingester + MITRE tag mapping shipped 2026-06-08)
+**Target window: 2026-06 → 2026-07**  ·  **Status: 🟡 In flight** (10 of 11 items shipped — VirusTotal v3 + AbuseIPDB already in master since pre-Phase-1; EPSS, Shodan, inKev shipped 2026-06-05; urlscan.io + GreyNoise shipped 2026-06-08; Sigma ingester + MITRE tag mapping + YARA persistence + scan-sample upload shipped 2026-06-08)
 
 The highest-leverage phase: every enricher we add makes existing
 dashboard cards more decision-useful, with near-zero schema churn.
@@ -107,8 +107,13 @@ Pluggable enricher pattern — runs on ingest *and* on-demand via API.
   `GET /v1/sigma/by-technique/:techniqueId` using a JSONB containment
   predicate. Lower-case Sigma convention round-trips to upper-case
   MITRE form.)
-- ⚪ YARA rule storage + "scan uploaded sample" endpoint
-  (rule store + match service only — no live execution)
+- 🟢 **YARA rule storage + scan-uploaded-sample endpoint**
+  (shipped 2026-06-08: in-memory YARA engine now persists user-added
+  rules to `detection_rules` with `rule_type='yara'` and re-hydrates on
+  startup so custom rules survive restart. Built-in rules stay
+  code-only. `POST /v1/yara/scan-sample` accepts multipart/form-data
+  or `application/octet-stream` up to 25 MiB; binary samples scan via
+  latin1 decoding so hex patterns match raw bytes.)
 
 ---
 
