@@ -18,11 +18,13 @@ import { IntelligenceIOCQuerySchema } from '../../lib/schemas';
 const router = new Hono();
 const log = createLogger('Intelligence');
 
-// Source sets per IOC type
+// Source sets per IOC type. `greynoise` joins the IP list (free Community
+// classification — drops benign scanners from priority). `urlscan` joins
+// both URL and domain lists (URL/domain scan history with screenshot URL).
 const SOURCE_MAP: Record<string, EnrichmentSource[]> = {
-    ip: ['virustotal', 'abuseipdb', 'geoip', 'dns', 'threatfox', 'urlhaus', 'shodan', 'zoomeye'],
-    domain: ['virustotal', 'geoip', 'dns', 'whois', 'threatfox', 'urlhaus', 'safebrowsing'],
-    url: ['virustotal', 'threatfox', 'urlhaus', 'safebrowsing'],
+    ip: ['virustotal', 'abuseipdb', 'greynoise', 'geoip', 'dns', 'threatfox', 'urlhaus', 'shodan', 'zoomeye'],
+    domain: ['virustotal', 'urlscan', 'geoip', 'dns', 'whois', 'threatfox', 'urlhaus', 'safebrowsing'],
+    url: ['virustotal', 'urlscan', 'threatfox', 'urlhaus', 'safebrowsing'],
     hash: ['virustotal', 'threatfox', 'urlhaus'],
     email: ['virustotal'],
 };
