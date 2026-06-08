@@ -52,7 +52,7 @@ export const playbookExecutions = pgTable('playbook_executions', {
 // ============================================================================
 
 export interface PlaybookAction {
-    type: 'enrich' | 'notify' | 'alert' | 'tag' | 'warninglist_check';
+    type: 'enrich' | 'notify' | 'alert' | 'tag' | 'warninglist_check' | 'sandbox_trigger';
     config: Record<string, unknown>;
 }
 
