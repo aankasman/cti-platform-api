@@ -13,9 +13,7 @@
  * Reference: https://docs.oasis-open.org/cti/stix/v2.1/os/stix-v2.1-os.html
  */
 
-import { createLogger } from '../lib/logger';
-
-const log = createLogger('STIXProvenance');
+// Note: no logger here — packages/core is dependency-light. Callers log as needed.
 
 // ============================================================================
 // STIX 2.1 Types

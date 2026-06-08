@@ -13,7 +13,8 @@
         "./audit": "./src/audit.ts",
         "./enrichment": "./src/enrichment.ts",
         "./jobs": "./src/jobs.ts",
-        "./sigma": "./src/sigma.ts"
+        "./sigma": "./src/sigma.ts",
+        "./stixProvenance": "./src/stixProvenance.ts"
     },
     "scripts": {
         "build": "tsc",
