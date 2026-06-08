@@ -20,6 +20,7 @@ export {
     feedSyncQueue, enrichmentQueue, aiAnalysisQueue, notificationQueue,
     alertsQueue, neo4jSyncQueue, cveEnrichmentQueue,
     maintenanceQueue,
+    sandboxPollerQueue,
 } from './definitions';
 
 // Events

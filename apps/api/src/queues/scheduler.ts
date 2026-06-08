@@ -20,7 +20,7 @@
  */
 
 import type { Queue } from 'bullmq';
-import { feedSyncQueue, cveEnrichmentQueue, maintenanceQueue, neo4jSyncQueue } from './index';
+import { feedSyncQueue, cveEnrichmentQueue, maintenanceQueue, neo4jSyncQueue, sandboxPollerQueue } from './index';
 import { createLogger } from '../lib/logger';
 import {
     getOverride,
@@ -222,6 +222,20 @@ export const JOB_REGISTRY: ScheduledJobRegistration[] = [
         queue: maintenanceQueue,
         payload: { type: 'data-retention' },
     },
+
+    // Phase 4 #5b — sandbox poll. Every 5 minutes is a reasonable cadence
+    // for ANY.RUN's typical analysis duration (1-3 min). Joe Sandbox and
+    // Hybrid Analysis run longer; the per-row 1-day TTL caps how long
+    // we keep checking before giving up.
+    {
+        key: 'sandboxPoll',
+        jobId: 'scheduled-sandbox-poll',
+        name: 'sandbox-poll',
+        description: 'Refresh non-terminal sandbox_reports against their vendors',
+        defaultCron: '*/5 * * * *',
+        queue: sandboxPollerQueue,
+        payload: { type: 'sandbox-poll' },
+    },
 ];
 
 // ============================================================================
@@ -329,7 +343,7 @@ async function cleanupUnregisteredRepeatables(): Promise<string[]> {
         if (config) desired.set(reg.name, config.cron);
     }
 
-    const managedQueues = [feedSyncQueue, maintenanceQueue, cveEnrichmentQueue];
+    const managedQueues = [feedSyncQueue, maintenanceQueue, cveEnrichmentQueue, sandboxPollerQueue];
     const removed: string[] = [];
 
     for (const queue of managedQueues) {
@@ -414,21 +428,23 @@ export async function getScheduledJobsAdminView() {
 
 /** Get all repeatable jobs across the queues we manage. */
 export async function getScheduledJobs() {
-    const [feedSyncJobs, maintenanceJobs] = await Promise.all([
+    const [feedSyncJobs, maintenanceJobs, sandboxPollerJobs] = await Promise.all([
         feedSyncQueue.getRepeatableJobs(),
         maintenanceQueue.getRepeatableJobs(),
+        sandboxPollerQueue.getRepeatableJobs(),
     ]);
 
     return {
         feedSync: feedSyncJobs,
         maintenance: maintenanceJobs,
+        sandboxPolling: sandboxPollerJobs,
     };
 }
 
 /** Remove all scheduled jobs across managed queues. */
 export async function clearScheduledJobs(): Promise<void> {
     log.info('Clearing all scheduled jobs');
-    const queues = [feedSyncQueue, maintenanceQueue, cveEnrichmentQueue];
+    const queues = [feedSyncQueue, maintenanceQueue, cveEnrichmentQueue, sandboxPollerQueue];
     for (const q of queues) {
         const jobs = await q.getRepeatableJobs();
         for (const job of jobs) {
