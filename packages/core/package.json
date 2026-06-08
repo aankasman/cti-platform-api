@@ -12,7 +12,8 @@
         "./webhooks": "./src/webhooks.ts",
         "./audit": "./src/audit.ts",
         "./enrichment": "./src/enrichment.ts",
-        "./jobs": "./src/jobs.ts"
+        "./jobs": "./src/jobs.ts",
+        "./sigma": "./src/sigma.ts"
     },
     "scripts": {
         "build": "tsc",
@@ -22,6 +23,7 @@
     "dependencies": {
         "@rinjani/db": "workspace:*",
         "drizzle-orm": "^0.30.0",
+        "yaml": "^2.8.2",
         "zod": "^3.22.0"
     },
     "devDependencies": {

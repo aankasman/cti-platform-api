@@ -378,6 +378,33 @@ export const YaraBatchScanSchema = z.object({
 });
 export type YaraBatchScan = z.infer<typeof YaraBatchScanSchema>;
 
+// ── Sigma route schemas ──────────────────────────────────────────────
+
+/** POST /v1/sigma/rules — ingest one or more Sigma YAML rules */
+export const SigmaIngestSchema = z.object({
+    yaml: z.string().min(1, 'yaml is required').max(5 * 1024 * 1024, 'YAML body exceeds 5 MiB'),
+});
+export type SigmaIngest = z.infer<typeof SigmaIngestSchema>;
+
+/** POST /v1/sigma/import/url — fetch a Sigma YAML by URL and ingest */
+export const SigmaImportUrlSchema = z.object({
+    url: z.string().url('url must be http(s)://...'),
+});
+export type SigmaImportUrl = z.infer<typeof SigmaImportUrlSchema>;
+
+/** GET /v1/sigma/rules — list filters */
+export const SigmaListSchema = z.object({
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(200).default(50),
+    severity: z.enum(['critical', 'high', 'medium', 'low', 'informational']).optional(),
+    status: z.enum(['stable', 'test', 'experimental', 'deprecated', 'unsupported']).optional(),
+    source: z.string().max(100).optional(),
+    q: z.string().max(200).optional(),
+    technique: z.string().max(20).optional(),
+    tactic: z.string().max(50).optional(),
+});
+export type SigmaListFilters = z.infer<typeof SigmaListSchema>;
+
 // ── Playbook execute schema ─────────────────────────────────────────
 
 /** POST /v1/playbooks/:id/execute — manually trigger execution */
