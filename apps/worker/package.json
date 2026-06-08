@@ -21,7 +21,7 @@
         "@rinjani/db": "workspace:*",
         "bullmq": "^5.77.3",
         "dotenv": "^17.2.3",
-        "drizzle-orm": "^0.30.0",
+        "drizzle-orm": "^0.45.2",
         "ioredis": "^5.10.1"
     },
     "devDependencies": {
