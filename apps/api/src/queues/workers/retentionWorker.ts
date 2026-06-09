@@ -14,6 +14,7 @@ import { escSql } from '../../lib/sanitize';
 import { createLogger } from '../../lib/logger';
 import { runActorTtpDiff } from '../../services/actorTtpDiffer';
 import { scanAllWatchterms } from '../../services/ahmiaSearch';
+import { runGistScan } from '../../services/gistMonitor';
 
 const log = createLogger('RetentionWorker');
 
@@ -35,6 +36,8 @@ export const retentionWorker = new Worker(
                 return await runActorTtpDiff();
             case 'dark-web-ahmia-scan':
                 return await scanAllWatchterms();
+            case 'paste-gist-scan':
+                return await runGistScan();
             default:
                 log.warn('Unknown maintenance job type', { name: job.name });
                 return { skipped: true };

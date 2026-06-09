@@ -88,3 +88,6 @@ export * from './dataBreaches';
 
 // Dark-web monitoring via Ahmia (indexed search only) — Phase 5 #4
 export * from './darkWebMonitoring';
+
+// Paste-site monitoring (GitHub Gist firehose) — Phase 5 #5
+export * from './pasteMonitoring';

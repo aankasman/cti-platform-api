@@ -725,6 +725,38 @@ export const DarkWebMentionUpdateSchema = z.object({
 });
 export type DarkWebMentionUpdate = z.infer<typeof DarkWebMentionUpdateSchema>;
 
+// ── Phase 5 #5 — Paste-site monitoring (GitHub Gist firehose) ─────
+
+export const PasteWatchtermCreateSchema = z.object({
+    term: z.string().min(1).max(255),
+    kind: z.string().max(50).optional(),
+    owner: z.string().max(255).optional(),
+    enabled: z.boolean().default(true),
+});
+export type PasteWatchtermCreate = z.infer<typeof PasteWatchtermCreateSchema>;
+
+export const PasteWatchtermUpdateSchema = z.object({
+    kind: z.string().max(50).optional(),
+    owner: z.string().max(255).optional(),
+    enabled: z.boolean().optional(),
+});
+export type PasteWatchtermUpdate = z.infer<typeof PasteWatchtermUpdateSchema>;
+
+export const PasteMentionListSchema = z.object({
+    watchtermId: z.string().uuid().optional(),
+    status: z.enum(['new', 'triaging', 'escalated', 'benign', 'blocked']).optional(),
+    minScore: z.coerce.number().int().min(0).max(100).optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type PasteMentionList = z.infer<typeof PasteMentionListSchema>;
+
+export const PasteMentionUpdateSchema = z.object({
+    status: z.enum(['new', 'triaging', 'escalated', 'benign', 'blocked']).optional(),
+    notes: z.string().max(4000).optional(),
+});
+export type PasteMentionUpdate = z.infer<typeof PasteMentionUpdateSchema>;
+
 // ── Phase 4 #4 — Blocklist feed query params ───────────────────────
 
 /** GET /v1/feeds/blocklist/:vendor/:type — vendor firewall feed */

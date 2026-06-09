@@ -458,8 +458,38 @@ Ethics and scope matter here — each item is framed deliberately narrow.
   (date parsing fallbacks, missing-Domain → null, malformed
   DataClasses element drop, boolean defaults, rawData passthrough
   for forensic recovery) and the Zod filter schema.)
-- 🔵 **Paste-site monitoring** — public Telegram channels, GitHub Gist
+- 🟢 **Paste-site monitoring** — public Telegram channels, GitHub Gist
   firehose, pastebin replacements (no scraping behind auth)
+  (shipped 2026-06-09: scoped to GitHub Gist firehose for the first
+  cut. Two new tables in migration 0055 — `paste_watchterms`
+  (operator-curated terms, UNIQUE per term) + `paste_mentions`
+  (source `github_gist`, author, filename, title, external_url,
+  external_id, snippet, score 0..100, lifecycle
+  `new`|`triaging`|`escalated`|`benign`|`blocked`, UNIQUE on
+  `(watchterm_id, source, external_id)` so re-scans collapse to
+  bumped last_seen_at). Pure matcher in `services/gistMonitor.ts`
+  walks `/gists/public` (3 pages × 30/page per run), normalises each
+  gist into `{id, owner, description, filenames, searchable}`, then
+  scans every enabled watchterm against the lower-cased searchable
+  text — emits one match row per (watchterm, gist) pair so a single
+  gist hitting two watchterms creates two mentions. matchedFilename
+  is surfaced when the term hits a filename specifically, which the
+  UI uses to highlight the filename in the triage card. Auth: anon
+  at 60 req/h or the existing `GITHUB_TICKETING_TOKEN` as Bearer for
+  5000 req/h (no special scope required). Routes: full CRUD on
+  `/v1/paste/watchterms` (+ admin DELETE), `POST /v1/paste/scan`
+  ad-hoc, `GET /v1/paste/mentions` triage queue score desc,
+  `PATCH /v1/paste/mentions/:id` analyst lifecycle. Scheduler runs
+  every 30 min on the maintenance queue (gists churn fast — longer
+  windows risk missing embeds before the author deletes them);
+  `paste-gist-scan` dispatch added to `retentionWorker.ts`. 16 unit
+  tests cover the normaliser (missing-field defaults, file-key
+  fallback) and the matcher (case-insensitivity, filename-only hits,
+  description-only hits, multi-watchterm-per-gist fan-out, empty-term
+  skip, no-match empty array). Telegram public channels (bot token
+  + per-channel subscription — different operational shape) and
+  Pastebin (free `/scrape` deprecated, paid firehose out of scope)
+  remain documented follow-ons.)
 - 🟢 **Dark web** — Ahmia indexed search only. No direct `.onion`
   crawling on a single-VPS deployment — operationally messy, legally
   fraught in several jurisdictions, and outside solo-maintainer scope

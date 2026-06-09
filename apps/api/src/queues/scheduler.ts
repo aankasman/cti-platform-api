@@ -294,6 +294,19 @@ export const JOB_REGISTRY: ScheduledJobRegistration[] = [
         queue: maintenanceQueue,
         payload: { type: 'dark-web-ahmia-scan' },
     },
+
+    // Phase 5 #5 — paste-site monitoring (GitHub Gist firehose).
+    // Every 30 minutes — gists churn fast; longer windows risk missing
+    // an embed before the author deletes it. ~90 gists scanned per run.
+    {
+        key: 'pasteGistScan',
+        jobId: 'scheduled-paste-gist-scan',
+        name: 'paste-gist-scan',
+        description: 'Match operator watchterms against the GitHub Gist firehose',
+        defaultCron: '*/30 * * * *',
+        queue: maintenanceQueue,
+        payload: { type: 'paste-gist-scan' },
+    },
 ];
 
 // ============================================================================
