@@ -406,7 +406,7 @@ walled garden.
 
 ## Phase 5 · Surface monitoring
 
-**Target window: 2027-03 → 2027-05**  ·  **Status: 🟡 In flight** (3 of 5 items shipped — brand / typo-squat monitoring 2026-06-09 with dnstwist-style permutations + scheduled 6h DNS sweep; threat-actor TTP changelog 2026-06-09 with snapshot-based differ on the existing relationships table + daily 04:30 UTC scheduled run; HIBP breach catalog 2026-06-09 with free-tier `/breaches` sync only — paid `/breachedaccount` intentionally out of scope. Paste-site monitoring and dark-web Ahmia search remain 🔵.)
+**Target window: 2027-03 → 2027-05**  ·  **Status: 🟢 Closed** (5 of 5 items shipped — brand / typo-squat monitoring 2026-06-09 with dnstwist-style permutations + scheduled 6h DNS sweep; threat-actor TTP changelog 2026-06-09 with snapshot-based differ on the existing relationships table + daily 04:30 UTC scheduled run; HIBP breach catalog 2026-06-09 with free-tier `/breaches` sync only — paid `/breachedaccount` intentionally out of scope; dark-web Ahmia indexed search 2026-06-09 with Cheerio-based parser + daily 07:00 UTC scan; paste-site monitoring 2026-06-09 with GitHub Gist firehose matcher + 30-min scheduler. Telegram public channels, Pastebin's paid firehose, and CertStream realtime stream remain documented follow-ons but not phase blockers.)
 
 Where we stop being a feed aggregator and start being a sensor network.
 Ethics and scope matter here — each item is framed deliberately narrow.
