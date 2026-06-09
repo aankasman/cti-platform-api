@@ -499,6 +499,20 @@ export const ReportIngestTextSchema = z.object({
 });
 export type ReportIngestText = z.infer<typeof ReportIngestTextSchema>;
 
+/**
+ * POST /v1/reports/ingest-url — fetch + readability-extract a URL, then
+ * run the same downstream pipeline as /ingest-text. Only http/https
+ * accepted; the service-side fetch enforces a 15 s timeout and 5 MB
+ * body cap.
+ */
+export const ReportIngestUrlSchema = z.object({
+    url: z.string().url().max(2048),
+    source: z.string().max(2048).optional(),
+    provider: z.enum(['gemini', 'openrouter', 'ollama']).optional(),
+    skipLlm: z.boolean().optional(),
+});
+export type ReportIngestUrl = z.infer<typeof ReportIngestUrlSchema>;
+
 // ── Phase 4 #4 — Blocklist feed query params ───────────────────────
 
 /** GET /v1/feeds/blocklist/:vendor/:type — vendor firewall feed */

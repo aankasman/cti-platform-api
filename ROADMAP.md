@@ -217,9 +217,18 @@ surfaces rather than a generic chat widget.
   reachable, the deterministic IOCs still surface and the response
   carries an `llmError` field so the operator knows what's missing.
   The extracted draft is read-only — operator decides what to import.
-  PDF parsing, URL fetch + readability, and the review/commit flow
-  that upserts draft IOCs + creates STIX threat-actor / indicator
-  rows are documented follow-ons.)
+  PDF + URL input modalities added 2026-06-09:
+  `POST /v1/reports/ingest-pdf` accepts multipart uploads up to 25 MB
+  (text-only via `pdf-parse` — no OCR, so image-only scans surface
+  `pageCount: N, textLength: 0`); `POST /v1/reports/ingest-url`
+  fetches an http/https URL with a 15 s timeout + 5 MB body cap and
+  runs a Cheerio-based readability shim (drops script/style/nav/
+  footer/aside, prefers `<article>` over `<main>` over `<body>`, no
+  jsdom). Both paths feed the same downstream IOC + LLM pipeline as
+  text-paste and add a `sourceMeta` block to the response so
+  operators know what came in. Review/commit flow that persists
+  drafts and creates STIX threat-actor / indicator rows is the one
+  remaining follow-on.)
 - 🟢 **Actor activity auto-summarisation**
   (shipped 2026-06-08: `GET|POST /v1/threat-actors/:id/summary?days=30`
   reads the actor row + recent relationships, outgoing-edge distribution,
