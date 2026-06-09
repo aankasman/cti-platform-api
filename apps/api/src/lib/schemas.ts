@@ -501,6 +501,36 @@ export const SandboxListFiltersSchema = z.object({
 });
 export type SandboxListFilters = z.infer<typeof SandboxListFiltersSchema>;
 
+// ── Phase 4 #6 — Ticketing (GitHub Issues scaffold) ────────────────
+
+const TICKET_VENDORS = ['github', 'jira'] as const;
+
+/** POST /v1/cases/:caseId/tickets — link or open an external ticket for a case */
+export const TicketCreateSchema = z.object({
+    vendor: z.enum(TICKET_VENDORS),
+    /** github: "owner/repo". jira: project key. */
+    repo: z.string().min(1, 'repo is required').max(255),
+    title: z.string().min(1).max(256).optional(),
+    body: z.string().max(65536).optional(),
+    labels: z.array(z.string().max(100)).max(50).optional(),
+});
+export type TicketCreate = z.infer<typeof TicketCreateSchema>;
+
+/** POST /v1/tickets/:linkId/comment — push a comment to the external ticket */
+export const TicketCommentSchema = z.object({
+    body: z.string().min(1, 'body is required').max(65536),
+});
+export type TicketComment = z.infer<typeof TicketCommentSchema>;
+
+/** GET /v1/tickets — list filters */
+export const TicketListFiltersSchema = z.object({
+    caseId: z.string().max(255).optional(),
+    vendor: z.enum(TICKET_VENDORS).optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type TicketListFilters = z.infer<typeof TicketListFiltersSchema>;
+
 // ── Phase 3 #2 — Actor activity summary ────────────────────────────
 
 /** GET|POST /v1/threat-actors/:id/summary — LLM-backed activity briefing */

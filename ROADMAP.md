@@ -230,7 +230,7 @@ surfaces rather than a generic chat widget.
 
 ## Phase 4 · Outbound integrations
 
-**Target window: 2026-12 → 2027-02**  ·  **Status: 🟡 In flight** (5 of 6 items shipped — SIEM CEF/LEEF/ECS codecs + Fortinet/PAN/Cisco blocklist feeds + Teams/Discord/PagerDuty notification adapters + rule DSL + playbook condition DSL with step guards + sandbox triggers across ANY.RUN/Joe Sandbox/Hybrid Analysis with scheduled polling, all shipped 2026-06-08)
+**Target window: 2026-12 → 2027-02**  ·  **Status: 🟡 In flight** (5 of 6 items shipped, 1 scaffolded — SIEM CEF/LEEF/ECS codecs + Fortinet/PAN/Cisco blocklist feeds + Teams/Discord/PagerDuty notification adapters + rule DSL + playbook condition DSL with step guards + sandbox triggers across ANY.RUN/Joe Sandbox/Hybrid Analysis with scheduled polling, all shipped 2026-06-08; ticketing scaffold with GitHub Issues client landed 2026-06-09)
 
 Make the platform an active participant in the analyst's stack, not a
 walled garden.
@@ -290,8 +290,21 @@ walled garden.
   per-row 1-day TTL caps API quota burn on dead submissions; per-batch
   parallelism capped at 8. File-upload submissions are the remaining
   follow-on.)
-- ⚪ **Ticketing** — JIRA + GitHub Issues two-way sync for investigation
+- 🟡 **Ticketing** — JIRA + GitHub Issues two-way sync for investigation
   tracking
+  (scaffold shipped 2026-06-09: new `ticket_links` table in migration
+  0048 joining `cases` ↔ external issues; unique on
+  `(vendor, vendor_repo, vendor_issue_id)` so the same external issue
+  can't be double-linked. GitHub Issues client live with create + fetch
+  + comment via the v2022-11-28 REST API; PAT in
+  `GITHUB_TICKETING_TOKEN`. Umbrella service exposes
+  `createTicketForCase` + `refreshTicket` + `syncCommentToTicket` +
+  list/detail; routes at `POST /v1/cases/:id/tickets`,
+  `GET /v1/cases/:id/tickets`, `GET /v1/tickets`,
+  `POST /v1/tickets/:id/refresh`, `POST /v1/tickets/:id/comment`.
+  Without a token, every call fails closed with a 502 + "not
+  configured" message. JIRA client + bidirectional webhook ingest
+  for closing the loop are the remaining follow-ups.)
 
 ---
 
