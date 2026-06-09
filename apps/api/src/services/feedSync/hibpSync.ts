@@ -31,7 +31,10 @@ const FETCH_TIMEOUT_MS = 30_000;
 
 interface HibpBreach {
     Name: string;
-    Title: string;
+    // Title is documented as required but the mapper falls back to Name when
+    // it's missing. Mark optional so test fixtures + occasional upstream
+    // omissions both compile cleanly.
+    Title?: string;
     Domain?: string;
     BreachDate?: string;     // YYYY-MM-DD
     AddedDate?: string;      // ISO-8601
