@@ -244,7 +244,7 @@ surfaces rather than a generic chat widget.
 
 ## Phase 4 · Outbound integrations
 
-**Target window: 2026-12 → 2027-02**  ·  **Status: 🟡 In flight** (5 of 6 items shipped, 1 scaffolded — SIEM CEF/LEEF/ECS codecs + Fortinet/PAN/Cisco blocklist feeds + Teams/Discord/PagerDuty notification adapters + rule DSL + playbook condition DSL with step guards + sandbox triggers across ANY.RUN/Joe Sandbox/Hybrid Analysis with scheduled polling, all shipped 2026-06-08; ticketing scaffold with GitHub Issues client landed 2026-06-09)
+**Target window: 2026-12 → 2027-02**  ·  **Status: 🟡 In flight** (5 of 6 items shipped, 1 with one-step follow-up — SIEM CEF/LEEF/ECS codecs + Fortinet/PAN/Cisco blocklist feeds + Teams/Discord/PagerDuty notification adapters + rule DSL + playbook condition DSL with step guards + sandbox triggers across ANY.RUN/Joe Sandbox/Hybrid Analysis with scheduled polling, all shipped 2026-06-08; ticketing scaffold with GitHub Issues client + JIRA Cloud client landed 2026-06-09 — only bidirectional webhook ingest remaining)
 
 Make the platform an active participant in the analyst's stack, not a
 walled garden.
@@ -317,8 +317,17 @@ walled garden.
   `GET /v1/cases/:id/tickets`, `GET /v1/tickets`,
   `POST /v1/tickets/:id/refresh`, `POST /v1/tickets/:id/comment`.
   Without a token, every call fails closed with a 502 + "not
-  configured" message. JIRA client + bidirectional webhook ingest
-  for closing the loop are the remaining follow-ups.)
+  configured" message. JIRA Cloud client added 2026-06-09: same
+  create / fetch / comment surface against REST API v3 with Basic
+  `email:token` auth (`JIRA_BASE_URL` + `JIRA_EMAIL` +
+  `JIRA_API_TOKEN`), ADF-wrapped descriptions + comments, status
+  mapped from `statusCategory.key` so custom workflow names don't
+  break the open/closed signal. Umbrella service result type
+  normalised from GitHub-specific `issueNumber: number` to a vendor-
+  agnostic `issueId: string` so the `vendor_issue_id` column accepts
+  both `"42"` and `"RIN-42"`. Bidirectional webhook ingest — auto-
+  closing the case when the linked issue closes externally — is the
+  one remaining follow-up.)
 
 ---
 
