@@ -543,6 +543,75 @@ export const ReportListSchema = z.object({
 });
 export type ReportList = z.infer<typeof ReportListSchema>;
 
+// ── Phase 3 #5 — Hypothesis tracking ──────────────────────────────
+
+const HypothesisSubjectTypeEnum = z.enum([
+    'threat_actor', 'malware', 'campaign', 'infrastructure', 'ioc', 'cve',
+]);
+
+/** POST /v1/hypotheses — create */
+export const HypothesisCreateSchema = z.object({
+    title: z.string().min(1).max(500),
+    claim: z.string().min(1).max(10_000),
+    subjectType: HypothesisSubjectTypeEnum.optional(),
+    subjectId: z.string().uuid().optional(),
+    /** Initial confidence; defaults to 50. */
+    confidenceScore: z.number().int().min(0).max(100).default(50),
+}).refine(v => (v.subjectType ? !!v.subjectId : true), {
+    message: 'subjectId is required when subjectType is set',
+    path: ['subjectId'],
+}).refine(v => (v.subjectId ? !!v.subjectType : true), {
+    message: 'subjectType is required when subjectId is set',
+    path: ['subjectType'],
+});
+export type HypothesisCreate = z.infer<typeof HypothesisCreateSchema>;
+
+/** GET /v1/hypotheses — list filters */
+export const HypothesisListSchema = z.object({
+    status: z.enum(['active', 'confirmed', 'refuted']).optional(),
+    subjectType: HypothesisSubjectTypeEnum.optional(),
+    subjectId: z.string().uuid().optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type HypothesisList = z.infer<typeof HypothesisListSchema>;
+
+/** PATCH /v1/hypotheses/:id — operator lifecycle update */
+export const HypothesisUpdateSchema = z.object({
+    status: z.enum(['active', 'confirmed', 'refuted']).optional(),
+    title: z.string().min(1).max(500).optional(),
+    claim: z.string().min(1).max(10_000).optional(),
+});
+export type HypothesisUpdate = z.infer<typeof HypothesisUpdateSchema>;
+
+/** POST /v1/hypotheses/:id/evidence — append evidence */
+export const EvidenceAppendSchema = z.object({
+    evidenceType: z.enum([
+        'ioc', 'relationship', 'sighting', 'actor', 'malware',
+        'campaign', 'report', 'freeform',
+    ]),
+    entityId: z.string().max(255).optional(),
+    kind: z.enum(['supports', 'refutes']),
+    weight: z.number().int().min(0).max(100).default(50),
+    note: z.string().max(2000).optional(),
+}).refine(v => (v.evidenceType === 'freeform' ? !!v.note : true), {
+    message: 'freeform evidence requires a note',
+    path: ['note'],
+}).refine(v => (v.evidenceType !== 'freeform' ? !!v.entityId : true), {
+    message: 'entityId is required for non-freeform evidence',
+    path: ['entityId'],
+});
+export type EvidenceAppend = z.infer<typeof EvidenceAppendSchema>;
+
+/** POST /v1/hypotheses/:id/grade — LLM grading */
+export const HypothesisGradeSchema = z.object({
+    provider: z.enum(['gemini', 'openrouter', 'ollama']).optional(),
+    skipLlm: z.boolean().optional(),
+    /** When true, persist the new confidence + reasoning to the row. Defaults true. */
+    persist: z.boolean().optional(),
+});
+export type HypothesisGrade = z.infer<typeof HypothesisGradeSchema>;
+
 // ── Phase 4 #4 — Blocklist feed query params ───────────────────────
 
 /** GET /v1/feeds/blocklist/:vendor/:type — vendor firewall feed */
