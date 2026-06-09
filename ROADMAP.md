@@ -406,13 +406,37 @@ walled garden.
 
 ## Phase 5 · Surface monitoring
 
-**Target window: 2027-03 → 2027-05**  ·  **Status: 🔵 Considering**
+**Target window: 2027-03 → 2027-05**  ·  **Status: 🟡 In flight** (1 of 5 items shipped — brand / typo-squat monitoring scaffold landed 2026-06-09 with dnstwist-style permutations + scheduled 6h DNS sweep; CertStream realtime stream and the other four items remain ⚪/🔵)
 
 Where we stop being a feed aggregator and start being a sensor network.
 Ethics and scope matter here — each item is framed deliberately narrow.
 
-- 🔵 **Brand / typo-squat monitoring** — CertStream + Levenshtein /
+- 🟢 **Brand / typo-squat monitoring** — CertStream + Levenshtein /
   DNS-twist; alerts on newly registered look-alikes of monitored domains
+  (shipped 2026-06-09: two new tables in migration 0051 —
+  `monitored_domains` (apex, label, owner, enabled, last_swept_at) +
+  `brand_alerts` (FK to monitored_domains, permutation, algorithm,
+  dns_state `active`|`mx_only`|`nx`|`error`, ip_addresses, composite
+  score 0..100, lifecycle `new`|`triaging`|`escalated`|`benign`|
+  `blocked`, first/last_seen). Pure dnstwist-style permutation
+  generator in `@rinjani/core/domainPermutations` covers 9 algorithms
+  — bitsquat / homoglyph / insertion / omission / substitution /
+  transposition / vowel-swap / hyphenation / subdomain — plus
+  Levenshtein for the scoring side. Scheduled 6h sweep walks every
+  enabled apex, resolves each permutation via Node's system DNS
+  (3 s per-permutation timeout, batches of 16, 2k cap per apex), and
+  upserts on a `(monitored_domain_id, permutation)` unique. Score
+  combines DNS state (+40 if active/mx_only), freshness (+20 if
+  first-seen ≤ 7 days), TLD match (+20), and Levenshtein ≤ 2 (+20).
+  Routes: full CRUD on `/v1/brand/domains`, ad-hoc `POST .../sweep`
+  + sweep-all, `GET /v1/brand/alerts` triage queue ordered by score
+  desc, `PATCH /v1/brand/alerts/:id` for analyst lifecycle. 28 unit
+  tests cover the permutation generator, splitApex (co.uk-style
+  TLDs), Levenshtein, scoring bands, and the Zod schemas. CertStream
+  WebSocket integration (realtime cert-issuance signal — the freshest
+  source for newly-registered typo-squats) and WHOIS-date lookups
+  are documented follow-ons; the DNS sweep alone is a credible
+  starting point.)
 - 🔵 **Leaked credentials** — HIBP API integration scoped to monitored
   domains
 - 🔵 **Paste-site monitoring** — public Telegram channels, GitHub Gist

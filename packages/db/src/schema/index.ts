@@ -76,3 +76,6 @@ export * from './extractedReports';
 
 // Hypothesis tracking + evidence — Phase 3 #5
 export * from './hypotheses';
+
+// Brand / typo-squat monitoring — Phase 5 #1
+export * from './brandMonitoring';

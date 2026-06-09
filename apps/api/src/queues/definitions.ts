@@ -171,3 +171,15 @@ export const sandboxPollerQueue = new Queue('sandbox-polling', {
         removeOnFail: { count: 200 },
     },
 });
+
+// Brand monitor sweep — Phase 5 #1. Own queue + lower retry count since
+// the work is idempotent and a failed sweep just means we try again on
+// the next 6-hour tick rather than retrying immediately.
+export const brandMonitorQueue = new Queue('brand-monitor', {
+    connection,
+    defaultJobOptions: {
+        attempts: 1,
+        removeOnComplete: { count: 50 },
+        removeOnFail: { count: 100 },
+    },
+});

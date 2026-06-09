@@ -20,7 +20,7 @@
  */
 
 import type { Queue } from 'bullmq';
-import { feedSyncQueue, cveEnrichmentQueue, maintenanceQueue, neo4jSyncQueue, sandboxPollerQueue } from './index';
+import { feedSyncQueue, cveEnrichmentQueue, maintenanceQueue, neo4jSyncQueue, sandboxPollerQueue, brandMonitorQueue } from './index';
 import { createLogger } from '../lib/logger';
 import {
     getOverride,
@@ -236,6 +236,22 @@ export const JOB_REGISTRY: ScheduledJobRegistration[] = [
         queue: sandboxPollerQueue,
         payload: { type: 'sandbox-poll' },
     },
+
+    // Phase 5 #1 — brand monitor sweep. Every 6 hours is a sensible
+    // default — typo-squat registrations don't churn faster than that,
+    // and a full sweep is bounded but not free (one DNS lookup per
+    // permutation per apex; ~1k permutations per 12-char label).
+    // Operators can re-tune via the override UI or trigger ad-hoc
+    // sweeps via POST /v1/brand/sweep.
+    {
+        key: 'brandMonitorSweep',
+        jobId: 'scheduled-brand-monitor-sweep',
+        name: 'brand-sweep',
+        description: 'Sweep monitored apexes for typo-squat permutations',
+        defaultCron: '0 */6 * * *',
+        queue: brandMonitorQueue,
+        payload: { type: 'brand-sweep' },
+    },
 ];
 
 // ============================================================================
@@ -343,7 +359,7 @@ async function cleanupUnregisteredRepeatables(): Promise<string[]> {
         if (config) desired.set(reg.name, config.cron);
     }
 
-    const managedQueues = [feedSyncQueue, maintenanceQueue, cveEnrichmentQueue, sandboxPollerQueue];
+    const managedQueues = [feedSyncQueue, maintenanceQueue, cveEnrichmentQueue, sandboxPollerQueue, brandMonitorQueue];
     const removed: string[] = [];
 
     for (const queue of managedQueues) {
@@ -444,7 +460,7 @@ export async function getScheduledJobs() {
 /** Remove all scheduled jobs across managed queues. */
 export async function clearScheduledJobs(): Promise<void> {
     log.info('Clearing all scheduled jobs');
-    const queues = [feedSyncQueue, maintenanceQueue, cveEnrichmentQueue, sandboxPollerQueue];
+    const queues = [feedSyncQueue, maintenanceQueue, cveEnrichmentQueue, sandboxPollerQueue, brandMonitorQueue];
     for (const q of queues) {
         const jobs = await q.getRepeatableJobs();
         for (const job of jobs) {

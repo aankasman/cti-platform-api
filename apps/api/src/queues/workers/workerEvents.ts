@@ -7,6 +7,7 @@ import { neo4jSyncWorker } from './syncWorkers';
 import { cveEnrichmentWorker } from './cveEnrichmentWorker';
 import { retentionWorker } from './retentionWorker';
 import { sandboxPollerWorker } from './sandboxPollerWorker';
+import { brandMonitorWorker } from './brandMonitorWorker';
 import { indexVulnerabilities, indexIOCs, indexActors } from '../../services/opensearch/indexing';
 import { createLogger } from '../../lib/logger';
 
@@ -14,7 +15,7 @@ import { createLogger } from '../../lib/logger';
 // Worker Event Handlers (with Webhook Integration)
 // ============================================================================
 
-const workers = [feedSyncWorker, enrichmentWorker, feedBatchWorker, aiAnalysisWorker, notificationWorker, alertsWorker, neo4jSyncWorker, cveEnrichmentWorker, retentionWorker, sandboxPollerWorker];
+const workers = [feedSyncWorker, enrichmentWorker, feedBatchWorker, aiAnalysisWorker, notificationWorker, alertsWorker, neo4jSyncWorker, cveEnrichmentWorker, retentionWorker, sandboxPollerWorker, brandMonitorWorker];
 
 const evtLog = createLogger('WorkerEvents');
 
