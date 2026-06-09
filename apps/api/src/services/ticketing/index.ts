@@ -19,6 +19,7 @@ import {
 } from '@rinjani/db/schema';
 import { createLogger } from '../../lib/logger';
 import { ghCreateIssue, ghGetIssue, ghAddComment } from './github';
+import { jiraCreateIssue, jiraGetIssue, jiraAddComment } from './jira';
 
 const log = createLogger('Ticketing');
 
@@ -74,20 +75,28 @@ export async function createTicketForCase(input: CreateInput): Promise<CreateOut
     const title = input.title ?? c.title;
     const body = input.body ?? defaultBody(c);
 
-    let vendorRes: { ok: boolean; issueNumber?: number; issueUrl?: string; error?: string };
+    // Each vendor returns its own id type (GitHub: integer, JIRA: string key like "RIN-42").
+    // Normalise to a single `issueId: string` so downstream code never branches.
+    let vendorRes: { ok: boolean; issueId?: string; issueUrl?: string; error?: string };
     switch (input.vendor) {
-        case 'github':
-            vendorRes = await ghCreateIssue({ repo: input.repo, title, body, labels: input.labels });
-            break;
-        case 'jira':
-            return {
-                link: {} as TicketLink,
-                created: false,
-                error: 'jira client not yet implemented (scaffold ships GitHub Issues only)',
+        case 'github': {
+            const gh = await ghCreateIssue({ repo: input.repo, title, body, labels: input.labels });
+            vendorRes = {
+                ok: gh.ok,
+                issueId: gh.issueNumber != null ? String(gh.issueNumber) : undefined,
+                issueUrl: gh.issueUrl,
+                error: gh.error,
             };
+            break;
+        }
+        case 'jira': {
+            const j = await jiraCreateIssue({ repo: input.repo, title, body, labels: input.labels });
+            vendorRes = { ok: j.ok, issueId: j.issueKey, issueUrl: j.issueUrl, error: j.error };
+            break;
+        }
     }
 
-    if (!vendorRes.ok || !vendorRes.issueNumber || !vendorRes.issueUrl) {
+    if (!vendorRes.ok || !vendorRes.issueId || !vendorRes.issueUrl) {
         // No row written: surface the error to the caller.
         log.warn('ticket create failed', { vendor: input.vendor, repo: input.repo, error: vendorRes.error });
         return { link: {} as TicketLink, created: false, error: vendorRes.error ?? 'create failed' };
@@ -97,7 +106,7 @@ export async function createTicketForCase(input: CreateInput): Promise<CreateOut
         caseId: input.caseId,
         vendor: input.vendor,
         vendorRepo: input.repo,
-        vendorIssueId: String(vendorRes.issueNumber),
+        vendorIssueId: vendorRes.issueId,
         vendorIssueUrl: vendorRes.issueUrl,
         title,
         status: 'open',
@@ -105,7 +114,7 @@ export async function createTicketForCase(input: CreateInput): Promise<CreateOut
         lastSyncedAt: new Date(),
     }).returning();
 
-    log.info('ticket created', { linkId: row.id, vendor: input.vendor, repo: input.repo, issueNumber: vendorRes.issueNumber });
+    log.info('ticket created', { linkId: row.id, vendor: input.vendor, repo: input.repo, issueId: vendorRes.issueId });
     return { link: row, created: true };
 }
 
@@ -117,6 +126,9 @@ export async function refreshTicket(linkId: string): Promise<TicketLink | null> 
     switch (row.vendor) {
         case 'github':
             r = await ghGetIssue({ repo: row.vendorRepo, issueNumber: row.vendorIssueId });
+            break;
+        case 'jira':
+            r = await jiraGetIssue({ repo: row.vendorRepo, issueNumber: row.vendorIssueId });
             break;
         default:
             r = { ok: false, error: `${row.vendor} polling not implemented` };
@@ -153,6 +165,8 @@ export async function syncCommentToTicket(linkId: string, body: string): Promise
     switch (row.vendor) {
         case 'github':
             return ghAddComment({ repo: row.vendorRepo, issueNumber: row.vendorIssueId, body });
+        case 'jira':
+            return jiraAddComment({ repo: row.vendorRepo, issueNumber: row.vendorIssueId, body });
         default:
             return { ok: false, error: `${row.vendor} comment sync not implemented` };
     }
