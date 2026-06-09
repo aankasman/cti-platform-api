@@ -67,3 +67,6 @@ export * from './stixEntities';
 
 // Sandbox submissions + reports — Phase 4 #5
 export * from './sandboxReports';
+
+// External ticket links for cases — Phase 4 #6
+export * from './ticketLinks';
