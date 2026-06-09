@@ -252,6 +252,21 @@ export const JOB_REGISTRY: ScheduledJobRegistration[] = [
         queue: brandMonitorQueue,
         payload: { type: 'brand-sweep' },
     },
+
+    // Phase 5 #2 — threat-actor TTP changelog differ. 04:30 UTC sits
+    // 30 minutes after the weekly MITRE sync (Sunday 04:00) so the
+    // first weekly diff has the freshest data, and the daily runs
+    // catch any out-of-band MITRE updates that landed via the manual
+    // import path.
+    {
+        key: 'mitreTtpDiff',
+        jobId: 'scheduled-mitre-ttp-diff',
+        name: 'mitre-ttp-diff',
+        description: 'Diff actor → technique attributions vs prior snapshot',
+        defaultCron: '30 4 * * *',
+        queue: maintenanceQueue,
+        payload: { type: 'mitre-ttp-diff' },
+    },
 ];
 
 // ============================================================================

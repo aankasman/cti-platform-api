@@ -444,8 +444,30 @@ Ethics and scope matter here — each item is framed deliberately narrow.
 - 🔵 **Dark web** — Ahmia indexed search only. No direct `.onion`
   crawling on a single-VPS deployment — operationally messy, legally
   fraught in several jurisdictions, and outside solo-maintainer scope
-- 🔵 **Threat-actor TTP changelog** — diff MITRE updates per group,
+- 🟢 **Threat-actor TTP changelog** — diff MITRE updates per group,
   alert when a tracked actor adopts a new technique
+  (shipped 2026-06-09: two new tables in migration 0052 —
+  `actor_ttp_state` (current known (actor, technique) tuples with
+  observed_at + confirmed_at, UNIQUE per pair) + `actor_ttp_changes`
+  (append-only log with change_type `added`|`removed`, detected_at,
+  optional analyst note). Pure differ in `services/actorTtpDiffer.ts`
+  reads the live (actor, technique) set from the existing
+  `relationships` table (filter source_type=threat_actor /
+  target_type=technique / relationship_type=uses — the table the
+  MITRE feed sync has been populating since pre-Phase-1), compares
+  against the snapshot, and emits one row per add/remove in a
+  single transaction. First run = baseline (everything emits as
+  added; the summary's `isBaselineRun:true` flag lets the UI dim
+  that initial burst). Daily 04:30 UTC scheduled run on the
+  maintenance queue, lands 30 min after the weekly MITRE sync (Sun
+  04:00 UTC) so the first weekly diff has the freshest data; the
+  same dispatch case in `retentionWorker.ts` handles the `mitre-ttp-diff`
+  job type. Routes: `GET /v1/ttp-changes` global feed (filter by
+  actor / technique / changeType / since), `GET /v1/actors/:id/ttp-changes`
+  per-actor, `POST /v1/ttp-changes/run-diff` admin-only ad-hoc
+  trigger. 14 unit tests cover the pure diff (no-change, add-only,
+  remove-only, brand-new actor, deprecated actor, mixed both,
+  per-actor isolation, empty input) and the Zod list filter.)
 
 ---
 

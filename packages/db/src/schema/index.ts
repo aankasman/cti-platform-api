@@ -74,6 +74,9 @@ export * from './ticketLinks';
 // Report ingestion draft persistence — Phase 3 #1 follow-on
 export * from './extractedReports';
 
+// Threat-actor TTP changelog — Phase 5 #2
+export * from './actorTtpChangelog';
+
 // Hypothesis tracking + evidence — Phase 3 #5
 export * from './hypotheses';
 
