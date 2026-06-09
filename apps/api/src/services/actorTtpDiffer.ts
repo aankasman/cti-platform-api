@@ -88,19 +88,29 @@ interface RelationshipRow { source_id: string; target_id: string }
 
 /**
  * Read the current actor → techniques set from the existing
- * `relationships` table. Only relationship_type='uses' between a
- * threat_actor and a technique counts as a TTP attribution.
+ * `relationships` table. Filters on the STIX 2.1 vocabulary that the
+ * MITRE feed sync writes:
+ *
+ *   - source_type='intrusion-set'  (STIX SDO for threat groups)
+ *   - target_type='attack-pattern' (STIX SDO for techniques)
+ *   - relationship_type='uses'
  *
  * The relationships table was wired up by the MITRE feed sync long
- * before Phase 5 — see packages/db/src/schema/mitre.ts. We don't
- * need a new ingest path here, just a read.
+ * before Phase 5 — see packages/db/src/schema/mitre.ts. We don't need
+ * a new ingest path here, just a read.
+ *
+ * 2026-06-09: original filter used `threat_actor` / `technique`, which
+ * are our internal Phase 1 names — MITRE never writes those values
+ * through `feed-sync:mitre`. Production live-test on 2026-06-09 found
+ * the relationships table holds 49,927 rows under the STIX vocab and
+ * zero under the old filter. Fix verified end-to-end on the droplet.
  */
 export async function snapshotCurrentTtps(): Promise<ActorTtpSet[]> {
     const result = await db.execute(sql`
         SELECT source_id, target_id
         FROM relationships
-        WHERE source_type = 'threat_actor'
-          AND target_type = 'technique'
+        WHERE source_type = 'intrusion-set'
+          AND target_type = 'attack-pattern'
           AND relationship_type = 'uses'
     `);
 

@@ -168,7 +168,7 @@ export async function runMigrations(): Promise<{
                 });
             } catch (err) {
                 await db.execute(sql`ROLLBACK`);
-                const errorMsg = (err as Error).message;
+                const errorMsg = formatPgError(err);
                 errors.push({ name: migrationName, error: errorMsg });
                 log.error(`Migration failed: ${migrationName}`, { error: errorMsg });
 
@@ -185,7 +185,7 @@ export async function runMigrations(): Promise<{
             }
         }
     } catch (err) {
-        log.error('Migration runner failed', { error: (err as Error).message });
+        log.error('Migration runner failed', { error: formatPgError(err) });
         errors.push({ name: '_runner', error: (err as Error).message });
     }
 
@@ -330,4 +330,35 @@ export async function autoMigrateOnStartup(): Promise<void> {
 async function computeHash(content: string): Promise<string> {
     const crypto = await import('crypto');
     return crypto.createHash('sha256').update(content).digest('hex').slice(0, 16);
+}
+
+/**
+ * Extract a useful diagnostic string from whatever the database driver
+ * threw. postgres-js errors aren't `Error` instances — they're plain
+ * objects with `.code` (e.g. '42P07'), `.detail`, `.hint`, `.position`,
+ * `.where`, `.message_primary`. Until 2026-06-09 the runner did
+ * `(err as Error).message` which logged literal `[object Object]`
+ * for those payloads, hiding the real reason.
+ *
+ * Format we want: `<code> <message> | detail=<…> | hint=<…>` — short
+ * enough to grep, structured enough to act on.
+ */
+function formatPgError(err: unknown): string {
+    if (err == null) return 'unknown error';
+    if (typeof err === 'string') return err;
+    const e = err as {
+        code?: string; message?: string; detail?: string; hint?: string;
+        where?: string; severity?: string; routine?: string;
+        message_primary?: string;
+    };
+    const parts: string[] = [];
+    if (e.code) parts.push(e.code);
+    const msg = e.message_primary ?? e.message;
+    if (msg) parts.push(typeof msg === 'string' ? msg : String(msg));
+    if (e.detail) parts.push(`detail=${e.detail}`);
+    if (e.hint) parts.push(`hint=${e.hint}`);
+    if (e.where) parts.push(`where=${e.where}`);
+    if (parts.length > 0) return parts.join(' | ');
+    // Last-ditch fallback so we never log raw [object Object].
+    try { return JSON.stringify(err); } catch { return String(err); }
 }

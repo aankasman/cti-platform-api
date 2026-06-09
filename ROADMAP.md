@@ -490,10 +490,10 @@ Ethics and scope matter here — each item is framed deliberately narrow.
   + per-channel subscription — different operational shape) and
   Pastebin (free `/scrape` deprecated, paid firehose out of scope)
   remain documented follow-ons.)
-- 🟢 **Dark web** — Ahmia indexed search only. No direct `.onion`
+- 🟡 **Dark web** — Ahmia indexed search only. No direct `.onion`
   crawling on a single-VPS deployment — operationally messy, legally
   fraught in several jurisdictions, and outside solo-maintainer scope
-  (shipped 2026-06-09: two new tables in migration 0054 —
+  (scaffold shipped 2026-06-09: two new tables in migration 0054 —
   `dark_web_watchterms` (operator-curated search terms with kind +
   owner + enabled + last_searched_at) + `dark_web_mentions` (per-hit
   rows with source `ahmia`, title, onion_url, snippet, composite
@@ -512,11 +512,19 @@ Ethics and scope matter here — each item is framed deliberately narrow.
   `/v1/dark-web/watchterms`, ad-hoc `POST .../scan` + sweep-all,
   `GET /v1/dark-web/mentions` triage queue ordered by score desc,
   `PATCH /v1/dark-web/mentions/:id` analyst lifecycle. 12 unit tests
-  cover the HTML parser (genuine-vs-bogus row handling, redirect URL
-  unwrap, non-onion drop, snippet cap, empty input) and the Zod
-  schemas. Operationally narrow on purpose; richer signals — scoring
-  on "term in title" / "freshness" / "repeat appearance" — are
-  documented follow-ons.)
+  cover the HTML parser. **2026-06-09 production validation:
+  parser broken by upstream.** Ahmia moved search results to
+  client-side rendering and discontinued the `/search/atom/` feed
+  (returns 404). Our Cheerio selectors find zero `.result`
+  elements in the live response — confirmed against the production
+  droplet (clean 200 / 4.7 KB body containing only the landing
+  page chrome). Three options on the table — (a) accept as a
+  broken-by-upstream documented gap, (b) route through a Tor
+  proxy and the real Ahmia onion address (conflicts with the
+  "no Tor on a single VPS" non-goal), (c) replace with an
+  alternative dark-web index (`darksearch.io` etc.). Tracked as
+  the one open Phase 5 follow-on; the table + route layer is
+  production-ready when an alternative source is wired up.)
 - 🟢 **Threat-actor TTP changelog** — diff MITRE updates per group,
   alert when a tracked actor adopts a new technique
   (shipped 2026-06-09: two new tables in migration 0052 —
@@ -525,12 +533,14 @@ Ethics and scope matter here — each item is framed deliberately narrow.
   (append-only log with change_type `added`|`removed`, detected_at,
   optional analyst note). Pure differ in `services/actorTtpDiffer.ts`
   reads the live (actor, technique) set from the existing
-  `relationships` table (filter source_type=threat_actor /
-  target_type=technique / relationship_type=uses — the table the
-  MITRE feed sync has been populating since pre-Phase-1), compares
-  against the snapshot, and emits one row per add/remove in a
-  single transaction. First run = baseline (everything emits as
-  added; the summary's `isBaselineRun:true` flag lets the UI dim
+  `relationships` table (filter source_type=intrusion-set /
+  target_type=attack-pattern / relationship_type=uses — the STIX
+  2.1 vocabulary the MITRE feed sync writes; production live-test
+  on 2026-06-09 found 49,927 rows under this filter and zero under
+  our original `threat_actor`/`technique` Phase-1 internal names),
+  compares against the snapshot, and emits one row per add/remove
+  in a single transaction. First run = baseline (everything emits
+  as added; the summary's `isBaselineRun:true` flag lets the UI dim
   that initial burst). Daily 04:30 UTC scheduled run on the
   maintenance queue, lands 30 min after the weekly MITRE sync (Sun
   04:00 UTC) so the first weekly diff has the freshest data; the
