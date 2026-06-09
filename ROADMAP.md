@@ -244,7 +244,7 @@ surfaces rather than a generic chat widget.
 
 ## Phase 4 · Outbound integrations
 
-**Target window: 2026-12 → 2027-02**  ·  **Status: 🟡 In flight** (5 of 6 items shipped, 1 with one-step follow-up — SIEM CEF/LEEF/ECS codecs + Fortinet/PAN/Cisco blocklist feeds + Teams/Discord/PagerDuty notification adapters + rule DSL + playbook condition DSL with step guards + sandbox triggers across ANY.RUN/Joe Sandbox/Hybrid Analysis with scheduled polling, all shipped 2026-06-08; ticketing scaffold with GitHub Issues client + JIRA Cloud client landed 2026-06-09 — only bidirectional webhook ingest remaining)
+**Target window: 2026-12 → 2027-02**  ·  **Status: 🟡 In flight** (5 of 6 items shipped, 1 with one open follow-up — SIEM CEF/LEEF/ECS codecs + Fortinet/PAN/Cisco blocklist feeds + Teams/Discord/PagerDuty notification adapters + rule DSL + playbook condition DSL with step guards + sandbox triggers across ANY.RUN/Joe Sandbox/Hybrid Analysis with scheduled polling, all shipped 2026-06-08; ticketing fully closed 2026-06-09 with GitHub Issues + JIRA Cloud + GitHub webhook ingest. Open: SIEM direct push clients — Splunk HEC / Elastic bulk / Sentinel LA on top of the existing codecs.)
 
 Make the platform an active participant in the analyst's stack, not a
 walled garden.
@@ -304,30 +304,33 @@ walled garden.
   per-row 1-day TTL caps API quota burn on dead submissions; per-batch
   parallelism capped at 8. File-upload submissions are the remaining
   follow-on.)
-- 🟡 **Ticketing** — JIRA + GitHub Issues two-way sync for investigation
+- 🟢 **Ticketing** — JIRA + GitHub Issues two-way sync for investigation
   tracking
-  (scaffold shipped 2026-06-09: new `ticket_links` table in migration
-  0048 joining `cases` ↔ external issues; unique on
+  (fully shipped 2026-06-09: new `ticket_links` table in migration 0048
+  joining `cases` ↔ external issues; unique on
   `(vendor, vendor_repo, vendor_issue_id)` so the same external issue
-  can't be double-linked. GitHub Issues client live with create + fetch
-  + comment via the v2022-11-28 REST API; PAT in
-  `GITHUB_TICKETING_TOKEN`. Umbrella service exposes
-  `createTicketForCase` + `refreshTicket` + `syncCommentToTicket` +
-  list/detail; routes at `POST /v1/cases/:id/tickets`,
-  `GET /v1/cases/:id/tickets`, `GET /v1/tickets`,
-  `POST /v1/tickets/:id/refresh`, `POST /v1/tickets/:id/comment`.
-  Without a token, every call fails closed with a 502 + "not
-  configured" message. JIRA Cloud client added 2026-06-09: same
-  create / fetch / comment surface against REST API v3 with Basic
-  `email:token` auth (`JIRA_BASE_URL` + `JIRA_EMAIL` +
-  `JIRA_API_TOKEN`), ADF-wrapped descriptions + comments, status
-  mapped from `statusCategory.key` so custom workflow names don't
-  break the open/closed signal. Umbrella service result type
-  normalised from GitHub-specific `issueNumber: number` to a vendor-
-  agnostic `issueId: string` so the `vendor_issue_id` column accepts
-  both `"42"` and `"RIN-42"`. Bidirectional webhook ingest — auto-
-  closing the case when the linked issue closes externally — is the
-  one remaining follow-up.)
+  can't be double-linked. GitHub Issues client (PR #72) covers create +
+  fetch + comment via the v2022-11-28 REST API with PAT auth
+  (`GITHUB_TICKETING_TOKEN`). JIRA Cloud client (PR #74) mirrors the
+  same surface against REST API v3 with Basic `email:token` auth
+  (`JIRA_BASE_URL` + `JIRA_EMAIL` + `JIRA_API_TOKEN`), ADF-wrapped
+  descriptions + comments, and `statusCategory.key`-based status
+  mapping that survives custom workflow names. Umbrella service result
+  type normalised to a vendor-agnostic `issueId: string` so
+  `vendor_issue_id` accepts both `"42"` and `"RIN-42"`. Inbound GitHub
+  webhook ingest (PR #75) at `POST /v1/webhooks/github/issues` closes
+  the bidirectional loop — HMAC-SHA256 verification via
+  `GITHUB_WEBHOOK_SECRET`, narrow action gating
+  (`closed`/`reopened`/`edited`), unknown links acknowledged so GitHub
+  doesn't retry-storm. Without credentials every outbound call fails
+  closed with a 502 + "not configured" message; the webhook route
+  503s without its secret. Umbrella routes:
+  `POST /v1/cases/:id/tickets`, `GET /v1/cases/:id/tickets`,
+  `GET /v1/tickets`, `POST /v1/tickets/:id/refresh`,
+  `POST /v1/tickets/:id/comment`. Honest note: JIRA path is
+  code-complete + unit-tested but not live-tested against a real
+  tenant — no JIRA test bed available; GitHub path will be live-
+  validated against the cti-platform-api repo's own issues.)
 
 ---
 
