@@ -60,6 +60,7 @@ import timelineRoutes from './v1/timeline';
 import reportRoutes from './v1/reports';
 import hypothesesRoutes from './v1/hypotheses';
 import brandMonitorRoutes from './v1/brandMonitor';
+import actorTtpChangelogRoutes from './v1/actorTtpChangelog';
 
 const v1 = new Hono();
 
@@ -172,5 +173,6 @@ v1.route('/', timelineRoutes);               // /timeline/:type/:id — per-enti
 v1.route('/', reportRoutes);                 // /reports/* — Phase 3 #1 report ingestion + review/commit
 v1.route('/', hypothesesRoutes);             // /hypotheses/* — Phase 3 #5 hypothesis tracking + LLM grading
 v1.route('/', brandMonitorRoutes);           // /brand/* — Phase 5 #1 brand / typo-squat monitoring
+v1.route('/', actorTtpChangelogRoutes);      // /ttp-changes + /actors/:id/ttp-changes — Phase 5 #2
 
 export default v1;

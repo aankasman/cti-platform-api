@@ -655,6 +655,20 @@ export const BrandAlertUpdateSchema = z.object({
 });
 export type BrandAlertUpdate = z.infer<typeof BrandAlertUpdateSchema>;
 
+// ── Phase 5 #2 — Threat-actor TTP changelog ────────────────────────
+
+/** GET /v1/ttp-changes — filter the global change log. */
+export const TtpChangeListSchema = z.object({
+    actorId: z.string().max(128).optional(),
+    techniqueId: z.string().max(128).optional(),
+    changeType: z.enum(['added', 'removed']).optional(),
+    /** ISO-8601 cutoff (e.g. `2026-05-09T00:00:00Z`); only entries `detected_at >= since` returned. */
+    since: z.string().datetime().optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(500).default(100),
+});
+export type TtpChangeList = z.infer<typeof TtpChangeListSchema>;
+
 // ── Phase 4 #4 — Blocklist feed query params ───────────────────────
 
 /** GET /v1/feeds/blocklist/:vendor/:type — vendor firewall feed */
