@@ -669,6 +669,28 @@ export const TtpChangeListSchema = z.object({
 });
 export type TtpChangeList = z.infer<typeof TtpChangeListSchema>;
 
+// ── Phase 5 #3 — HIBP breach catalog ──────────────────────────────
+
+/**
+ * GET /v1/data-breaches — filter the breach catalog. Useful patterns:
+ *   - ?domain=example.com           breaches at a specific domain
+ *   - ?addedSince=2026-05-09T...    new breaches in the last 30 days
+ *   - ?includeRetired=false         drop retired entries (default)
+ *   - ?includeSpamList=false        drop spam-list entries (default)
+ */
+export const DataBreachListSchema = z.object({
+    domain: z.string().max(255).optional(),
+    name: z.string().max(255).optional(),
+    addedSince: z.string().datetime().optional(),
+    breachSince: z.string().datetime().optional(),
+    includeRetired: z.coerce.boolean().default(false),
+    includeSpamList: z.coerce.boolean().default(false),
+    includeFabricated: z.coerce.boolean().default(false),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(500).default(100),
+});
+export type DataBreachList = z.infer<typeof DataBreachListSchema>;
+
 // ── Phase 4 #4 — Blocklist feed query params ───────────────────────
 
 /** GET /v1/feeds/blocklist/:vendor/:type — vendor firewall feed */

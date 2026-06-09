@@ -61,6 +61,7 @@ import reportRoutes from './v1/reports';
 import hypothesesRoutes from './v1/hypotheses';
 import brandMonitorRoutes from './v1/brandMonitor';
 import actorTtpChangelogRoutes from './v1/actorTtpChangelog';
+import dataBreachRoutes from './v1/dataBreaches';
 
 const v1 = new Hono();
 
@@ -174,5 +175,6 @@ v1.route('/', reportRoutes);                 // /reports/* — Phase 3 #1 report
 v1.route('/', hypothesesRoutes);             // /hypotheses/* — Phase 3 #5 hypothesis tracking + LLM grading
 v1.route('/', brandMonitorRoutes);           // /brand/* — Phase 5 #1 brand / typo-squat monitoring
 v1.route('/', actorTtpChangelogRoutes);      // /ttp-changes + /actors/:id/ttp-changes — Phase 5 #2
+v1.route('/', dataBreachRoutes);             // /data-breaches/* — Phase 5 #3 HIBP breach catalog (free-tier sync)
 
 export default v1;

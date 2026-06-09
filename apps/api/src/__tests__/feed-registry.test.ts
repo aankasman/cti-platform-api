@@ -13,10 +13,12 @@ describe('Feed Registry', () => {
     // as the primary CVE-disclosure feed (cvelistV5, fresh within
     // minutes of CNA disclosure); NVD remains as a CVSS-score fallback.
     // `epss` joined as Phase 1's exploit-prediction enrichment.
+    // `hibp` joined as Phase 5 #3's HIBP breach catalog (free-tier
+    // /breaches sync only — no paid /breachedaccount).
     const EXPECTED_FEEDS = [
         'otx', 'cisa', 'cveorg', 'nvd', 'abusessl', 'threatfox',
         'urlhaus', 'malwarebazaar', 'openphish', 'mitre', 'mispgalaxy',
-        'epss',
+        'epss', 'hibp',
     ];
 
     describe('getRegisteredFeeds', () => {

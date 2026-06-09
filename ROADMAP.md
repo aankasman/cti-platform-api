@@ -437,8 +437,27 @@ Ethics and scope matter here — each item is framed deliberately narrow.
   source for newly-registered typo-squats) and WHOIS-date lookups
   are documented follow-ons; the DNS sweep alone is a credible
   starting point.)
-- 🔵 **Leaked credentials** — HIBP API integration scoped to monitored
+- 🟢 **Leaked credentials** — HIBP API integration scoped to monitored
   domains
+  (shipped 2026-06-09: free-tier `/breaches` sync only — the paid
+  `/breachedaccount` endpoint stays out of scope at $4/month per
+  operator. New `data_breaches` table (migration 0053) mirrors the
+  full HIBP catalog (~700 entries) with provenance + sync timestamps
+  + raw payload stash. Sync service (`services/feedSync/hibpSync.ts`)
+  hits the unauthenticated endpoint with a compliant `User-Agent`,
+  upserts on `name` unique, captures the full upstream object in
+  `raw_data` so any HIBP field we don't model is recoverable.
+  Registered in the feed dispatch map as `'hibp'` so it inherits the
+  standard `feed-sync` worker + UI + override surface. Scheduler:
+  daily at 06:30 UTC, lands 30 min after the EPSS run. Routes:
+  `GET /v1/data-breaches` (filter by domain / addedSince /
+  breachSince / include-retired/-spam/-fabricated toggles — default
+  hides all three to keep the analyst feed clean),
+  `GET /v1/data-breaches/:name`, `POST /v1/data-breaches/sync`
+  admin-only ad-hoc trigger. 14 unit tests cover the pure mapper
+  (date parsing fallbacks, missing-Domain → null, malformed
+  DataClasses element drop, boolean defaults, rawData passthrough
+  for forensic recovery) and the Zod filter schema.)
 - 🔵 **Paste-site monitoring** — public Telegram channels, GitHub Gist
   firehose, pastebin replacements (no scraping behind auth)
 - 🔵 **Dark web** — Ahmia indexed search only. No direct `.onion`
