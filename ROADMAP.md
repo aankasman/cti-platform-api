@@ -406,7 +406,7 @@ walled garden.
 
 ## Phase 5 · Surface monitoring
 
-**Target window: 2027-03 → 2027-05**  ·  **Status: 🟡 In flight** (1 of 5 items shipped — brand / typo-squat monitoring scaffold landed 2026-06-09 with dnstwist-style permutations + scheduled 6h DNS sweep; CertStream realtime stream and the other four items remain ⚪/🔵)
+**Target window: 2027-03 → 2027-05**  ·  **Status: 🟡 In flight** (3 of 5 items shipped — brand / typo-squat monitoring 2026-06-09 with dnstwist-style permutations + scheduled 6h DNS sweep; threat-actor TTP changelog 2026-06-09 with snapshot-based differ on the existing relationships table + daily 04:30 UTC scheduled run; HIBP breach catalog 2026-06-09 with free-tier `/breaches` sync only — paid `/breachedaccount` intentionally out of scope. Paste-site monitoring and dark-web Ahmia search remain 🔵.)
 
 Where we stop being a feed aggregator and start being a sensor network.
 Ethics and scope matter here — each item is framed deliberately narrow.
