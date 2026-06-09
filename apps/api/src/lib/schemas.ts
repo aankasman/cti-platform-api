@@ -513,6 +513,36 @@ export const ReportIngestUrlSchema = z.object({
 });
 export type ReportIngestUrl = z.infer<typeof ReportIngestUrlSchema>;
 
+/**
+ * POST /v1/reports/:id/commit — apply operator-approved IOCs from a draft
+ * to the canonical `iocs` table. `approvedIocs` is the subset the operator
+ * actually wants imported; anything in the draft but not in this list is
+ * skipped (with a `not_in_draft` counter in the response summary).
+ *
+ * Entity commit (threat-actor / malware family / etc.) is a separate
+ * follow-on; this PR only commits IOCs.
+ */
+const IocKindEnum = z.enum([
+    'ipv4', 'ipv6', 'domain', 'url', 'hash-md5', 'hash-sha1', 'hash-sha256', 'email', 'cve',
+]);
+
+export const ReportCommitSchema = z.object({
+    approvedIocs: z.array(z.object({
+        kind: IocKindEnum,
+        value: z.string().min(1).max(2048),
+    })).max(10_000).default([]),
+    iocSource: z.string().max(255).optional(),
+});
+export type ReportCommit = z.infer<typeof ReportCommitSchema>;
+
+/** GET /v1/reports — list filters for the draft browser. */
+export const ReportListSchema = z.object({
+    status: z.enum(['draft', 'committed', 'dismissed']).optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type ReportList = z.infer<typeof ReportListSchema>;
+
 // ── Phase 4 #4 — Blocklist feed query params ───────────────────────
 
 /** GET /v1/feeds/blocklist/:vendor/:type — vendor firewall feed */
