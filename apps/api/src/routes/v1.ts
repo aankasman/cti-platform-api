@@ -41,6 +41,7 @@ import exportEnhancedRoutes from './v1/exportEnhanced';
 import exportSiemRoutes from './v1/exportSiem';
 import sandboxRoutes from './v1/sandbox';
 import ticketingRoutes from './v1/ticketing';
+import ticketingWebhookRoutes from './v1/ticketingWebhooks';
 import blocklistFeedRoutes from './v1/blocklistFeed';
 import caseRoutes from './v1/cases';
 import reputationRoutes from './v1/reputation';
@@ -149,6 +150,7 @@ v1.route('/', exportEnhancedRoutes);         // Enhanced export (MISP, Suricata,
 v1.route('/', exportSiemRoutes);             // SIEM export (CEF, LEEF, ECS NDJSON)
 v1.route('/', sandboxRoutes);                // Sandbox submissions + reports (Phase 4 #5)
 v1.route('/', ticketingRoutes);              // External ticket links for cases (Phase 4 #6)
+v1.route('/', ticketingWebhookRoutes);       // Inbound GitHub webhook → auto-flip linked status (Phase 4 #6b)
 v1.route('/', blocklistFeedRoutes);          // Vendor firewall feeds (Fortinet, PAN, Cisco)
 v1.route('/', caseRoutes);                   // Case / investigation management
 v1.route('/', reputationRoutes);             // IP/domain reputation & blocklists
