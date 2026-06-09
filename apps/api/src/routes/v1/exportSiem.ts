@@ -1,23 +1,27 @@
 /**
- * SIEM exporters — Phase 4 #2.
+ * SIEM exporters + direct push — Phase 4 #2.
  *
- *   POST /v1/export/cef   → CEF lines, one per IOC
- *   POST /v1/export/leef  → LEEF v2 lines
- *   POST /v1/export/ecs   → NDJSON in Elastic Common Schema (suitable for
- *                          Elastic `_bulk` or Beats `filestream`)
+ *   POST /v1/export/cef         → CEF lines, one per IOC
+ *   POST /v1/export/leef        → LEEF v2 lines
+ *   POST /v1/export/ecs         → NDJSON in Elastic Common Schema
+ *   POST /v1/siem/push/splunk   → ship the same data to Splunk HEC
+ *   POST /v1/siem/push/elastic  → ship the same data via Elastic _bulk
  *
- * The codecs live in `@rinjani/core/siemFormatters` — DB query + serve
- * is the only thing happening here.
+ * The codecs live in `@rinjani/core/siemFormatters`; the push clients
+ * live in `../../services/siemPush/*`. Routes are the DB-query +
+ * serve / fan-out glue.
  */
 import { Hono } from 'hono';
 import { requireAuth } from '../../middleware/auth';
 import { rawQuery, sql } from '@rinjani/db';
-import { SiemExportSchema } from '../../lib/schemas';
+import { SiemExportSchema, SiemPushSchema } from '../../lib/schemas';
 import { createLogger } from '../../lib/logger';
 import {
     toCefBatch, toLeefBatch, toEcs, ecsToNdjson,
     type SiemIOC,
 } from '@rinjani/core/siemFormatters';
+import { pushToSplunk } from '../../services/siemPush/splunkHec';
+import { pushToElastic } from '../../services/siemPush/elasticBulk';
 
 const log = createLogger('SIEMExport');
 const exportSiem = new Hono();
@@ -100,6 +104,27 @@ exportSiem.post('/export/ecs', async (c) => {
             'X-Rinjani-Record-Count': String(iocs.length),
         },
     });
+});
+
+// ── Direct push (Phase 4 #2 closer) ─────────────────────────────────
+
+exportSiem.post('/siem/push/splunk', async (c) => {
+    const body = SiemPushSchema.parse(await c.req.json().catch(() => ({})));
+    const iocs = await fetchIocs(body);
+    const result = await pushToSplunk(iocs, {
+        index: body.index,
+        sourcetype: body.sourcetype,
+    });
+    log.info('Splunk HEC push', { batchSize: result.batchSize, accepted: result.accepted, ok: result.ok });
+    return c.json({ success: result.ok, data: result }, result.ok ? 200 : 502);
+});
+
+exportSiem.post('/siem/push/elastic', async (c) => {
+    const body = SiemPushSchema.parse(await c.req.json().catch(() => ({})));
+    const iocs = await fetchIocs(body);
+    const result = await pushToElastic(iocs, { index: body.index });
+    log.info('Elastic _bulk push', { batchSize: result.batchSize, indexed: result.indexed, errorCount: result.errors.length, ok: result.ok });
+    return c.json({ success: result.ok, data: result }, result.ok ? 200 : 502);
 });
 
 export default exportSiem;
