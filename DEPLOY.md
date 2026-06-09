@@ -176,18 +176,102 @@ See `.env.example` for full list.
 
 ## Database Migrations
 
-### Push Schema (Development)
+### Production: auto-migrate on container boot (recommended)
+
+Set `ENABLE_AUTO_MIGRATE=true` in `.env` and the API container will apply
+any pending migrations on every boot before serving traffic. Idempotent
+and cross-references both tracking tables (`__drizzle_migrations` +
+`__sql_migrations`) so a previously-run CLI script doesn't cause
+double-apply attempts.
 
 ```bash
-pnpm --filter @rinjani/db push
+# In .env on the droplet:
+ENABLE_AUTO_MIGRATE=true
 ```
 
-### Generate Migration (Production)
+⚠️ **This is now the recommended default.** Without it, a deploy that
+ships a new migration silently leaves the database on the old schema —
+which manifests as 500 errors on whatever new route touches the new
+table. We hit this on 2026-06-09 with `0048_ticket_links.sql`: the
+ticketing scaffold PR shipped clean code + a fresh table, the table
+never ran, and `POST /v1/cases/:id/tickets` returned 500 after
+silently creating an orphan GitHub issue.
+
+### Manual CLI fallback (emergency / first-time setup)
 
 ```bash
+# Apply all pending migrations (idempotent, tracks in __sql_migrations)
+docker exec v3-api sh -c 'cd /app && pnpm --filter @rinjani/db db:apply'
+
+# Or hand-apply a single file (least preferred — no tracking record):
+docker exec -i v3-postgres psql -U postgres -d rinjani_v3 \
+  < packages/db/drizzle/0048_ticket_links.sql
+```
+
+### Development
+
+```bash
+# Push schema directly without versioned migrations (dev only)
+pnpm --filter @rinjani/db push
+
+# Generate a new migration after editing schema files
 pnpm --filter @rinjani/db generate
 pnpm --filter @rinjani/db migrate
 ```
+
+---
+
+## Worker startup grace (avoid post-restart thundering herd)
+
+On the 8 GB droplet we saw a 15-minute post-restart lockout when
+docker-compose recreated v3-api: feed-sync, IOC enrichment, embedding
+warm-up, and several `*/15` cron jobs all fired simultaneously as the
+event loop was still booting, pegging one core and timing out the
+Postgres pool until the queue drained.
+
+Set `WORKER_STARTUP_GRACE_MS=60000` to defer worker processing for the
+first 60 s after boot. Jobs queue normally; processing waits. The data
+plane gets room to finish its own warm-up first.
+
+```bash
+# In .env on the droplet:
+WORKER_STARTUP_GRACE_MS=60000
+```
+
+Default is `0` (no grace) to preserve existing behaviour. Anything
+larger than `0` opts the workers into the paused-on-boot path.
+
+---
+
+## Footgun: `environment:` lists vs `.env` (docker-compose.override.yml)
+
+The production override on the droplet uses explicit `environment:`
+lists (one `KEY=${VAR}` line per env var passed in), not `env_file:`.
+That means **every new env var has to be added to the override** —
+forgetting it silently leaves the container missing the value.
+
+We hit this twice on 2026-06-09:
+
+1. `GITHUB_TICKETING_TOKEN` + `GITHUB_WEBHOOK_SECRET` were added to
+   `.env` but not to the override → the API returned
+   `"GITHUB_TICKETING_TOKEN not configured"` despite the host having
+   the right values.
+2. The `-` separator was typed as `:` instead of `=` (`KEY:VALUE`
+   instead of `KEY=VALUE`) — docker compose silently parses it as a
+   key with empty value, no error.
+
+**Fix when you hit it:** add the missing keys to v3-api's
+`environment:` block using `KEY=${KEY:-}` interpolation, then
+recreate:
+
+```bash
+docker compose -p rinjani-api up -d --no-deps --force-recreate v3-api
+sleep 8
+docker exec v3-api env | grep YOUR_NEW_VAR
+```
+
+A future cleanup will switch the override to `env_file: .env` so new
+vars flow through automatically.
 
 ---
 

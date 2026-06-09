@@ -239,10 +239,47 @@ workers.forEach((worker) => {
 const startupLog = createLogger('Workers');
 
 /**
- * Start all workers
+ * Start all workers.
+ *
+ * When `WORKER_STARTUP_GRACE_MS` is set, every worker is paused for that
+ * many milliseconds after boot. This kills the post-restart thundering
+ * herd we hit during the 2026-06-09 deploy: a fresh container, all the
+ * minute-boundary cron ticks fire together (15-minute CVE.org sync,
+ * MISP-galaxy, IOC enrichment sweep, ...), the embedded worker pegs one
+ * core, the Postgres pool times out for ~15 minutes, and health checks
+ * 503 until the queue drains. With a grace period, jobs queue normally
+ * but processing waits — giving Postgres / OpenSearch / Neo4j room to
+ * finish their own warm-up first.
+ *
+ * Sensible production value: 60000 (1 minute). Default 0 keeps
+ * pre-existing behaviour.
  */
+const STARTUP_GRACE_MS = parseInt(process.env.WORKER_STARTUP_GRACE_MS || '0', 10);
+
 export function startWorkers() {
-    startupLog.info('Starting all BullMQ workers', { workers: workers.map(w => w.name) });
+    startupLog.info('Starting all BullMQ workers', {
+        workers: workers.map(w => w.name),
+        startupGraceMs: STARTUP_GRACE_MS,
+    });
+
+    if (STARTUP_GRACE_MS > 0) {
+        for (const w of workers) {
+            try { w.pause(); } catch (err) {
+                startupLog.warn('Worker pause() failed', { worker: w.name, error: (err as Error).message });
+            }
+        }
+        startupLog.info('Workers paused for startup grace — jobs queue but do not process', {
+            graceMs: STARTUP_GRACE_MS,
+        });
+        setTimeout(() => {
+            for (const w of workers) {
+                try { w.resume(); } catch (err) {
+                    startupLog.warn('Worker resume() failed', { worker: w.name, error: (err as Error).message });
+                }
+            }
+            startupLog.info('Startup grace ended — workers now processing queued jobs');
+        }, STARTUP_GRACE_MS).unref?.();
+    }
 }
 
 /**

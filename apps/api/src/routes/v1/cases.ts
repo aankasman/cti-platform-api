@@ -97,11 +97,18 @@ cases.post('/cases', requireRole('admin', 'analyst'), async (c) => {
     const body = CreateCaseSchema.parse(await c.req.json().catch(() => ({})));
     const userId = c.get('user')?.id || 'unknown';
 
+    // Empty-tags handling: `ARRAY[]` (no elements, no type) makes Postgres
+    // throw "cannot determine type of empty array". Use the typed `'{}'::text[]`
+    // literal instead so an empty input collapses cleanly to an empty array.
+    const tagsLiteral = body.tags.length > 0
+        ? `ARRAY[${body.tags.map(t => `'${esc(t)}'`).join(',')}]`
+        : `'{}'::text[]`;
+
     const result = await rawQuery(sql.raw(`
         INSERT INTO cases (title, description, severity, status, assignee, tlp, tags, created_by)
         VALUES ('${esc(body.title)}', ${body.description ? `'${esc(body.description)}'` : 'NULL'},
                 '${esc(body.severity)}', '${esc(body.status)}', ${body.assignee ? `'${esc(body.assignee)}'` : 'NULL'},
-                '${esc(body.tlp)}', ARRAY[${body.tags.map(t => `'${esc(t)}'`).join(',')}], '${esc(userId)}')
+                '${esc(body.tlp)}', ${tagsLiteral}, '${esc(userId)}')
         RETURNING *
     `));
 
