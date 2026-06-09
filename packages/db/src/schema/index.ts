@@ -82,3 +82,6 @@ export * from './hypotheses';
 
 // Brand / typo-squat monitoring — Phase 5 #1
 export * from './brandMonitoring';
+
+// HIBP breach catalog (free-tier sync) — Phase 5 #3
+export * from './dataBreaches';

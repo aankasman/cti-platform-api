@@ -15,6 +15,7 @@ import {
     syncMalwareBazaarFeed, syncOpenPhishFeed, syncMITREFeed, syncMISPGalaxyFeed,
     syncEPSSFeed,
 } from './additionalFeeds';
+import { syncHibpBreaches } from './hibpSync';
 
 export type FeedSyncOptions = { limit?: number; since?: string };
 export type FeedHandler = (opts?: FeedSyncOptions) => Promise<SyncResult>;
@@ -41,6 +42,11 @@ const FEED_REGISTRY: Record<string, FeedHandler> = {
     // CVE feeds above: NVD/CVE.org give us the CVEs, EPSS gives us
     // "which of those is likely to be exploited in the next 30 days".
     epss: () => syncEPSSFeed(),
+    // HIBP — haveibeenpwned.com's vetted breach catalog. Free-tier only:
+    // `/breaches` returns the full list (~700 entries). The per-account
+    // `/breachedaccount` endpoint requires a paid key and is intentionally
+    // out of scope.
+    hibp: () => syncHibpBreaches(),
 };
 
 /** Get the sync handler for a specific feed source. */

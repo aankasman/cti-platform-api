@@ -181,6 +181,20 @@ export const JOB_REGISTRY: ScheduledJobRegistration[] = [
         payload: { source: 'epss' },
     },
 
+    // Phase 5 #3 — HIBP breach catalog. Daily at 06:30 UTC, 30 minutes
+    // after EPSS. The /breaches endpoint refresh cadence is on the order
+    // of days; once a day is more than sufficient and stays well under
+    // any reasonable rate limit. Free-tier only — no /breachedaccount.
+    {
+        key: 'hibpSync',
+        jobId: 'scheduled-hibp-sync',
+        name: 'hibp-sync',
+        description: 'Sync HIBP breach catalog (free-tier /breaches endpoint)',
+        defaultCron: '30 6 * * *',
+        queue: feedSyncQueue,
+        payload: { source: 'hibp' },
+    },
+
     // --- Graph sync ----------------------------------------------------
     {
         key: 'neo4jFullSync',
