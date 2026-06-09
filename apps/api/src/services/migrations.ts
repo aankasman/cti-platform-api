@@ -87,13 +87,35 @@ export async function runMigrations(): Promise<{
     const errors: Array<{ name: string; error: string }> = [];
 
     try {
-        // Get list of already-applied migrations
+        // Get list of already-applied migrations.
+        //
+        // Cross-reference both tracking tables: this runner tracks via
+        // `__drizzle_migrations`, but `packages/db/src/scripts/apply-migrations.ts`
+        // (the CLI fallback used during emergency manual deploys) tracks via
+        // `__sql_migrations`. A name in EITHER counts as applied — that way a
+        // manual `db:apply` run doesn't get re-attempted on the next boot,
+        // and a future flip to ENABLE_AUTO_MIGRATE=true on a database where
+        // some migrations were applied via the CLI runs cleanly.
+        //
+        // Migration filenames live with the `.sql` suffix in __sql_migrations
+        // and without it in __drizzle_migrations. Normalise to the no-suffix
+        // form (matching this runner's convention) before union-ing.
         const appliedResult = await db.execute(sql`
             SELECT name FROM __drizzle_migrations WHERE status = 'applied' ORDER BY id
         `) as unknown as RawQueryResult;
         const appliedSet = new Set<string>(
             (appliedResult.rows || []).map((r) => String(r.name))
         );
+        try {
+            const cliResult = await db.execute(sql`
+                SELECT name FROM __sql_migrations
+            `) as unknown as RawQueryResult;
+            for (const r of cliResult.rows || []) {
+                appliedSet.add(String(r.name).replace(/\.sql$/, ''));
+            }
+        } catch {
+            // Table doesn't exist yet — fine, this DB has never run the CLI script.
+        }
 
         // Read migration files from the drizzle output directory
         const fs = await import('fs');
