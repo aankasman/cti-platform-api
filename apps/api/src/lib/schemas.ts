@@ -466,6 +466,25 @@ export const SiemExportSchema = z.object({
 });
 export type SiemExport = z.infer<typeof SiemExportSchema>;
 
+/**
+ * POST /v1/siem/push/{splunk|elastic} — same filter shape as the export
+ * routes, plus optional per-request overrides for the target's index.
+ * Cap pushes harder than downloads (5k vs 100k) — pushes happen on a
+ * single API request and we'd rather force the operator to page than
+ * burn 100k events on one timeout-prone fetch.
+ */
+export const SiemPushSchema = z.object({
+    dateFrom: z.string().max(40).optional(),
+    dateTo: z.string().max(40).optional(),
+    severity: z.enum(['critical', 'high', 'medium', 'low']).optional(),
+    type: z.string().max(50).optional(),
+    limit: z.coerce.number().int().min(1).max(5_000).default(1_000),
+    /** Vendor-specific overrides. Both clients fall back to env defaults. */
+    index: z.string().max(255).optional(),
+    sourcetype: z.string().max(100).optional(),
+});
+export type SiemPush = z.infer<typeof SiemPushSchema>;
+
 // ── Phase 4 #4 — Blocklist feed query params ───────────────────────
 
 /** GET /v1/feeds/blocklist/:vendor/:type — vendor firewall feed */

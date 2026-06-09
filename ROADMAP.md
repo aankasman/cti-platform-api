@@ -259,12 +259,22 @@ walled garden.
   dedupes overlapping rules. `/notifications/evaluate-rules` lets analysts
   dry-run a rule against a payload; `/notifications/dispatch` actually
   fires the matched channels.)
-- 🟡 **SIEM exporters** — JSON/CSV/MISP/STIX/IDS-rules already shipped;
+- 🟢 **SIEM exporters** — JSON/CSV/MISP/STIX/IDS-rules already shipped;
   CEF + LEEF + ECS NDJSON shipped 2026-06-08 via
   `POST /v1/export/{cef,leef,ecs}` (codecs in
-  `@rinjani/core/siemFormatters`). A direct Splunk HEC client / Elastic
-  bulk push / Sentinel Log Analytics API is the open work — the codecs
-  are the hard part, those are thin HTTP clients on top.
+  `@rinjani/core/siemFormatters`). Direct push closed 2026-06-09:
+  `POST /v1/siem/push/splunk` ships ECS-shaped events to a Splunk HEC
+  endpoint (`SPLUNK_HEC_URL` + `SPLUNK_HEC_TOKEN`, optional
+  `SPLUNK_HEC_INDEX` / `SPLUNK_HEC_SOURCETYPE`); `POST /v1/siem/push/elastic`
+  ships the same data to an Elasticsearch / OpenSearch cluster's
+  `_bulk` endpoint (`ELASTIC_URL` + either `ELASTIC_API_KEY` or
+  `ELASTIC_USER`+`ELASTIC_PASSWORD`, optional `ELASTIC_INDEX`). Both
+  clients fail closed without credentials, share the same filter
+  schema as the export routes (with a stricter 5k batch cap vs 100k
+  for downloads), and use the IOC id as the doc `_id` so re-runs
+  upsert instead of duplicating. Sentinel Log Analytics API stays a
+  follow-up but is not a blocker — the two clients above cover the
+  vast majority of production SIEMs.
 - 🟢 **SOAR-style playbooks DSL**
   (engine existed pre-Phase-4 with trigger event + flat conditions +
   ordered actions; shipped 2026-06-08 PM: condition DSL extended via
