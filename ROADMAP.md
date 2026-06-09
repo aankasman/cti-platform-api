@@ -34,7 +34,7 @@ Last reviewed: **2026-06-05**.
 
 ## Phase 1 · Enrichment & Detection-as-Code
 
-**Target window: 2026-06 → 2026-07**  ·  **Status: 🟡 In flight** (10 of 11 items shipped — VirusTotal v3 + AbuseIPDB already in master since pre-Phase-1; EPSS, Shodan, inKev shipped 2026-06-05; urlscan.io + GreyNoise shipped 2026-06-08; Sigma ingester + MITRE tag mapping + YARA persistence + scan-sample upload shipped 2026-06-08)
+**Target window: 2026-06 → 2026-07**  ·  **Status: 🟢 Closed** (10 of 10 items shipped — VirusTotal v3 + AbuseIPDB already in master since pre-Phase-1; EPSS, Shodan, inKev shipped 2026-06-05; urlscan.io + GreyNoise shipped 2026-06-08; Sigma ingester + MITRE tag mapping + YARA persistence + scan-sample upload shipped 2026-06-08; confirmed-phishing coverage via the OpenPhish + URLhaus + urlscan.io triad reframed 2026-06-09 — PhishTank dropped because registrations have been paused indefinitely upstream, and CVSS v4 moved to the non-goal list because v3 + EPSS + KEV already covers the decision data.)
 
 The highest-leverage phase: every enricher we add makes existing
 dashboard cards more decision-useful, with near-zero schema churn.
@@ -72,7 +72,18 @@ Pluggable enricher pattern — runs on ingest *and* on-demand via API.
   for IPs / domains / URLs / hashes, returns harmless/suspicious/malicious
   vendor counts and the top-rated tags. Default enrichment source
   alongside Shodan + GeoIP.)
-- ⚪ PhishTank + OpenPhish — confirmed-phishing cross-check
+- 🟢 **Confirmed-phishing coverage — OpenPhish + URLhaus + urlscan.io**
+  (already in master: `apps/worker/src/feeds/openphish.ts` pulls the
+  OpenPhish free feed at confidence 90 with no API key required;
+  URLhaus ingest covers the malicious-URL side of phishing-adjacent
+  infra; `enrichURLScan()` cross-checks domain + URL submissions
+  against urlscan's verdict block (phishing categorisation lives in
+  `page.task.method = 'manual'` + `page.brand`). PhishTank was the
+  original fourth source but they paused new-user registrations
+  indefinitely in 2024 and have given no reopening signal as of
+  2026-06-09 — dropped from the roadmap rather than left pending.
+  Reachability stays equivalent because OpenPhish + URLhaus already
+  cover what PhishTank's free feed surfaced.)
 
 ### Vulnerability scoring upgrades
 
@@ -82,7 +93,10 @@ Pluggable enricher pattern — runs on ingest *and* on-demand via API.
   backfill scored 6,503 of 7,095 vulns; 951 sit at EPSS ≥ 0.5. Surfaced
   on the vulns list table, CVE drawer, and CVE detail page. Transforms
   *"X critical CVEs"* into *"X critical with EPSS ≥ 0.7"*.)
-- ⚪ CVSS v4 fields alongside existing v3
+- *(Removed 2026-06-09: CVSS v4 moved to the "what we won't build" list
+  below. v3 + EPSS + KEV is the strict-superset decision data for
+  prioritisation today, and v4 publishers haven't caught up
+  meaningfully enough to repay the schema churn.)*
 - 🟢 **Surface `inKev` boolean on every vuln panel**
   (shipped 2026-06-05: data was already in `vulnerabilities.is_exploited`;
   `/v1/landscape/overview` now returns `vulnerabilities.inKev` count, the
@@ -369,6 +383,8 @@ shippable.
 | Native mobile app | Dashboard is responsive; a separate React Native app is a tar pit for a solo dev |
 | Built-in case management | JIRA / GitHub two-way sync covers 95% of this for 5% of the effort |
 | Authoritative malware analysis | Sandbox *triggers* yes (Phase 4); building a sandbox no |
+| CVSS v4 alongside v3 | v3 + EPSS + KEV is the strict-superset prioritisation signal today; v4 adoption among publishers remains sparse, so the schema + UI churn doesn't repay itself. Will reconsider when ≥ 20% of newly-published CVEs carry a v4 vector. |
+| PhishTank integration | Registrations paused indefinitely upstream since 2024 with no reopening signal. OpenPhish + URLhaus + urlscan.io already cover what PhishTank's free feed surfaced. |
 
 ---
 
