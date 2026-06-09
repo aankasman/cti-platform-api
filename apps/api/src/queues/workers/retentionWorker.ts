@@ -13,6 +13,7 @@ import { batchDecay } from '../../services/confidenceDecay';
 import { escSql } from '../../lib/sanitize';
 import { createLogger } from '../../lib/logger';
 import { runActorTtpDiff } from '../../services/actorTtpDiffer';
+import { scanAllWatchterms } from '../../services/ahmiaSearch';
 
 const log = createLogger('RetentionWorker');
 
@@ -32,6 +33,8 @@ export const retentionWorker = new Worker(
                 return await processDataRetention();
             case 'mitre-ttp-diff':
                 return await runActorTtpDiff();
+            case 'dark-web-ahmia-scan':
+                return await scanAllWatchterms();
             default:
                 log.warn('Unknown maintenance job type', { name: job.name });
                 return { skipped: true };

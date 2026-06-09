@@ -85,3 +85,6 @@ export * from './brandMonitoring';
 
 // HIBP breach catalog (free-tier sync) — Phase 5 #3
 export * from './dataBreaches';
+
+// Dark-web monitoring via Ahmia (indexed search only) — Phase 5 #4
+export * from './darkWebMonitoring';

@@ -691,6 +691,40 @@ export const DataBreachListSchema = z.object({
 });
 export type DataBreachList = z.infer<typeof DataBreachListSchema>;
 
+// ── Phase 5 #4 — Dark-web monitoring (Ahmia) ──────────────────────
+
+/** POST /v1/dark-web/watchterms — add a search term. */
+export const DarkWebWatchtermCreateSchema = z.object({
+    term: z.string().min(1).max(255),
+    kind: z.string().max(50).optional(),
+    owner: z.string().max(255).optional(),
+    enabled: z.boolean().default(true),
+});
+export type DarkWebWatchtermCreate = z.infer<typeof DarkWebWatchtermCreateSchema>;
+
+export const DarkWebWatchtermUpdateSchema = z.object({
+    kind: z.string().max(50).optional(),
+    owner: z.string().max(255).optional(),
+    enabled: z.boolean().optional(),
+});
+export type DarkWebWatchtermUpdate = z.infer<typeof DarkWebWatchtermUpdateSchema>;
+
+/** GET /v1/dark-web/mentions — triage queue filter. */
+export const DarkWebMentionListSchema = z.object({
+    watchtermId: z.string().uuid().optional(),
+    status: z.enum(['new', 'triaging', 'escalated', 'benign', 'blocked']).optional(),
+    minScore: z.coerce.number().int().min(0).max(100).optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type DarkWebMentionList = z.infer<typeof DarkWebMentionListSchema>;
+
+export const DarkWebMentionUpdateSchema = z.object({
+    status: z.enum(['new', 'triaging', 'escalated', 'benign', 'blocked']).optional(),
+    notes: z.string().max(4000).optional(),
+});
+export type DarkWebMentionUpdate = z.infer<typeof DarkWebMentionUpdateSchema>;
+
 // ── Phase 4 #4 — Blocklist feed query params ───────────────────────
 
 /** GET /v1/feeds/blocklist/:vendor/:type — vendor firewall feed */

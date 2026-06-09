@@ -460,9 +460,33 @@ Ethics and scope matter here — each item is framed deliberately narrow.
   for forensic recovery) and the Zod filter schema.)
 - 🔵 **Paste-site monitoring** — public Telegram channels, GitHub Gist
   firehose, pastebin replacements (no scraping behind auth)
-- 🔵 **Dark web** — Ahmia indexed search only. No direct `.onion`
+- 🟢 **Dark web** — Ahmia indexed search only. No direct `.onion`
   crawling on a single-VPS deployment — operationally messy, legally
   fraught in several jurisdictions, and outside solo-maintainer scope
+  (shipped 2026-06-09: two new tables in migration 0054 —
+  `dark_web_watchterms` (operator-curated search terms with kind +
+  owner + enabled + last_searched_at) + `dark_web_mentions` (per-hit
+  rows with source `ahmia`, title, onion_url, snippet, composite
+  score 0..100, lifecycle `new`|`triaging`|`escalated`|`benign`|
+  `blocked`, UNIQUE on `(watchterm_id, source, onion_url)` so re-runs
+  collapse to a single row with bumped last_seen_at). Pure HTML
+  parser in `services/ahmiaSearch.ts` uses Cheerio to walk
+  `.result` elements, prefers `<cite>` for the onion URL, falls back
+  to `<a href>` with Ahmia's `/search/redirect?redirect_url=...`
+  unwrap, drops non-`.onion` results (donate links, ads). The
+  platform queries clearnet ahmia.fi only — NEVER touches the Tor
+  network, never fetches an onion URL. Scheduled daily at 07:00 UTC
+  on the maintenance queue (30 min after HIBP); the
+  `dark-web-ahmia-scan` dispatch case lives in `retentionWorker.ts`
+  alongside the other maintenance jobs. Routes: full CRUD on
+  `/v1/dark-web/watchterms`, ad-hoc `POST .../scan` + sweep-all,
+  `GET /v1/dark-web/mentions` triage queue ordered by score desc,
+  `PATCH /v1/dark-web/mentions/:id` analyst lifecycle. 12 unit tests
+  cover the HTML parser (genuine-vs-bogus row handling, redirect URL
+  unwrap, non-onion drop, snippet cap, empty input) and the Zod
+  schemas. Operationally narrow on purpose; richer signals — scoring
+  on "term in title" / "freshness" / "repeat appearance" — are
+  documented follow-ons.)
 - 🟢 **Threat-actor TTP changelog** — diff MITRE updates per group,
   alert when a tracked actor adopts a new technique
   (shipped 2026-06-09: two new tables in migration 0052 —

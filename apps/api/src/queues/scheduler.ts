@@ -281,6 +281,19 @@ export const JOB_REGISTRY: ScheduledJobRegistration[] = [
         queue: maintenanceQueue,
         payload: { type: 'mitre-ttp-diff' },
     },
+
+    // Phase 5 #4 — dark-web Ahmia scan. Daily 07:00 UTC, 30 min after
+    // HIBP. Ahmia is rate-friendly + the platform queries clearnet only,
+    // so once-a-day is plenty.
+    {
+        key: 'darkWebAhmiaScan',
+        jobId: 'scheduled-dark-web-ahmia-scan',
+        name: 'dark-web-ahmia-scan',
+        description: 'Query Ahmia for every enabled dark_web_watchterms entry',
+        defaultCron: '0 7 * * *',
+        queue: maintenanceQueue,
+        payload: { type: 'dark-web-ahmia-scan' },
+    },
 ];
 
 // ============================================================================
