@@ -197,14 +197,29 @@ MISP / OpenCTI / vendor stacks.
 
 ## Phase 3 · LLM analyst features
 
-**Target window: 2026-10 → 2026-11**  ·  **Status: 🟡 In flight** (3 of 5 items shipped — embedding similarity backend (pre-Phase-3) + actor activity summarisation + NL→Cypher all shipped 2026-06-08)
+**Target window: 2026-10 → 2026-11**  ·  **Status: 🟡 In flight** (4 of 5 items shipped — embedding similarity backend (pre-Phase-3) + actor activity summarisation + NL→Cypher all shipped 2026-06-08; report ingestion scaffold shipped 2026-06-09 covering text-paste path with deterministic IOC extraction + LLM entity enrichment. PDF + URL fetch paths are documented follow-ons. Only hypothesis tracking remains ⚪.)
 
 Provider abstraction (Gemini / OpenRouter / Ollama) already exists. This
 phase wires it into the analyst workflow, deliberately scoped to specific
 surfaces rather than a generic chat widget.
 
-- ⚪ **Report ingestion** — paste a PDF or URL; extract IOCs + TTPs +
+- 🟡 **Report ingestion** — paste a PDF or URL; extract IOCs + TTPs +
   actors into STIX entities for review
+  (scaffold shipped 2026-06-09: `POST /v1/reports/ingest-text` accepts
+  operator-pasted text (up to 200 KB) and returns a structured draft
+  combining (a) deterministic regex extraction for value-shaped IOCs —
+  IPv4 / IPv6 / domains / URLs / MD5 / SHA-1 / SHA-256 / emails / CVEs,
+  with defang refanging (`evil[.]com`, `hxxp://`, `[@]`) and file-
+  extension filtering (`report.pdf` is not an IOC) — and (b) the
+  existing `extractEntities()` LLM helper for fuzzy entities (threat-
+  actor names, malware families, campaigns, MITRE techniques, target
+  sectors, countries). LLM degrades gracefully: if no provider is
+  reachable, the deterministic IOCs still surface and the response
+  carries an `llmError` field so the operator knows what's missing.
+  The extracted draft is read-only — operator decides what to import.
+  PDF parsing, URL fetch + readability, and the review/commit flow
+  that upserts draft IOCs + creates STIX threat-actor / indicator
+  rows are documented follow-ons.)
 - 🟢 **Actor activity auto-summarisation**
   (shipped 2026-06-08: `GET|POST /v1/threat-actors/:id/summary?days=30`
   reads the actor row + recent relationships, outgoing-edge distribution,

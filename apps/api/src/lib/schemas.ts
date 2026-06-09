@@ -485,6 +485,20 @@ export const SiemPushSchema = z.object({
 });
 export type SiemPush = z.infer<typeof SiemPushSchema>;
 
+/**
+ * POST /v1/reports/ingest-text — Phase 3 #1 (Report ingestion scaffold).
+ * Operator-pasted free-form text → deterministic IOCs + LLM-extracted
+ * entities returned as a draft for review. Text cap matches the
+ * service-side MAX_TEXT_LEN; the LLM helper internally truncates to 6k.
+ */
+export const ReportIngestTextSchema = z.object({
+    text: z.string().min(1, 'text is required').max(200_000),
+    source: z.string().max(2048).optional(),
+    provider: z.enum(['gemini', 'openrouter', 'ollama']).optional(),
+    skipLlm: z.boolean().optional(),
+});
+export type ReportIngestText = z.infer<typeof ReportIngestTextSchema>;
+
 // ── Phase 4 #4 — Blocklist feed query params ───────────────────────
 
 /** GET /v1/feeds/blocklist/:vendor/:type — vendor firewall feed */
