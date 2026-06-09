@@ -217,7 +217,7 @@ surfaces rather than a generic chat widget.
   reachable, the deterministic IOCs still surface and the response
   carries an `llmError` field so the operator knows what's missing.
   The extracted draft is read-only — operator decides what to import.
-  PDF + URL input modalities added 2026-06-09:
+  PDF + URL input modalities added 2026-06-09 in PR #85:
   `POST /v1/reports/ingest-pdf` accepts multipart uploads up to 25 MB
   (text-only via `pdf-parse` — no OCR, so image-only scans surface
   `pageCount: N, textLength: 0`); `POST /v1/reports/ingest-url`
@@ -225,10 +225,22 @@ surfaces rather than a generic chat widget.
   runs a Cheerio-based readability shim (drops script/style/nav/
   footer/aside, prefers `<article>` over `<main>` over `<body>`, no
   jsdom). Both paths feed the same downstream IOC + LLM pipeline as
-  text-paste and add a `sourceMeta` block to the response so
-  operators know what came in. Review/commit flow that persists
-  drafts and creates STIX threat-actor / indicator rows is the one
-  remaining follow-on.)
+  text-paste and add a `sourceMeta` block to the response so operators
+  know what came in.
+  Review/commit flow added 2026-06-09 in PR #86: new
+  `extracted_reports` table (migration 0049) persists every draft with
+  full provenance (`source` + `source_kind` + `source_meta`),
+  lifecycle state (`draft` | `committed` | `dismissed`), and audit
+  attribution (`created_by` + `committed_by` + `commit_summary`).
+  Routes: `GET /v1/reports` (filterable by status),
+  `GET /v1/reports/:id`, `POST /v1/reports/:id/commit` upserts
+  operator-approved IOCs into the canonical `iocs` table — idempotent
+  against the unique-value constraint, doesn't downgrade
+  severity/confidence on re-import. `POST /v1/reports/:id/dismiss`
+  ends the lifecycle without import. Honest scope: CVE drafts are
+  skipped at commit (they belong in `vulnerabilities`, not `iocs`);
+  LLM entity commit (threat-actor / malware-family / campaign → STIX
+  rows) is a separate follow-on that needs name disambiguation logic.)
 - 🟢 **Actor activity auto-summarisation**
   (shipped 2026-06-08: `GET|POST /v1/threat-actors/:id/summary?days=30`
   reads the actor row + recent relationships, outgoing-edge distribution,

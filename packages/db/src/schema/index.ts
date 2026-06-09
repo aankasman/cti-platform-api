@@ -70,3 +70,6 @@ export * from './sandboxReports';
 
 // External ticket links for cases — Phase 4 #6
 export * from './ticketLinks';
+
+// Report ingestion draft persistence — Phase 3 #1 follow-on
+export * from './extractedReports';
