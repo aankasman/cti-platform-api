@@ -21,6 +21,7 @@ export {
     alertsQueue, neo4jSyncQueue, cveEnrichmentQueue,
     maintenanceQueue,
     sandboxPollerQueue,
+    brandMonitorQueue,
 } from './definitions';
 
 // Events

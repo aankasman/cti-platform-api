@@ -18,6 +18,7 @@
         "./stixVocab": "./src/stixVocab.ts",
         "./siemFormatters": "./src/siemFormatters.ts",
         "./iocExtractor": "./src/iocExtractor.ts",
+        "./domainPermutations": "./src/domainPermutations.ts",
         "./blocklistFormatters": "./src/blocklistFormatters.ts",
         "./playbookDsl": "./src/playbookDsl.ts"
     },

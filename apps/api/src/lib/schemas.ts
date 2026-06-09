@@ -612,6 +612,49 @@ export const HypothesisGradeSchema = z.object({
 });
 export type HypothesisGrade = z.infer<typeof HypothesisGradeSchema>;
 
+// ── Phase 5 #1 — Brand / typo-squat monitoring ────────────────────
+
+/**
+ * Apex domains the operator wants the scheduled sweep to watch. The
+ * apex is normalised to lowercase + trimmed before storage; routes
+ * downstream rely on that being the canonical form.
+ */
+export const MonitoredDomainCreateSchema = z.object({
+    apexDomain: z.string()
+        .min(3).max(255)
+        .regex(/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z]{2,24})+$/i, 'must be a valid apex domain (label.tld)')
+        .transform(v => v.toLowerCase().trim()),
+    label: z.string().max(255).optional(),
+    owner: z.string().max(255).optional(),
+    enabled: z.boolean().default(true),
+});
+export type MonitoredDomainCreate = z.infer<typeof MonitoredDomainCreateSchema>;
+
+export const MonitoredDomainUpdateSchema = z.object({
+    label: z.string().max(255).optional(),
+    owner: z.string().max(255).optional(),
+    enabled: z.boolean().optional(),
+});
+export type MonitoredDomainUpdate = z.infer<typeof MonitoredDomainUpdateSchema>;
+
+/** GET /v1/brand/alerts — list filters for the triage queue. */
+export const BrandAlertListSchema = z.object({
+    monitoredDomainId: z.string().uuid().optional(),
+    status: z.enum(['new', 'triaging', 'escalated', 'benign', 'blocked']).optional(),
+    dnsState: z.enum(['active', 'mx_only', 'nx', 'error']).optional(),
+    minScore: z.coerce.number().int().min(0).max(100).optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type BrandAlertList = z.infer<typeof BrandAlertListSchema>;
+
+/** PATCH /v1/brand/alerts/:id — analyst triage. */
+export const BrandAlertUpdateSchema = z.object({
+    status: z.enum(['new', 'triaging', 'escalated', 'benign', 'blocked']).optional(),
+    notes: z.string().max(4000).optional(),
+});
+export type BrandAlertUpdate = z.infer<typeof BrandAlertUpdateSchema>;
+
 // ── Phase 4 #4 — Blocklist feed query params ───────────────────────
 
 /** GET /v1/feeds/blocklist/:vendor/:type — vendor firewall feed */
