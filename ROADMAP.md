@@ -197,7 +197,7 @@ MISP / OpenCTI / vendor stacks.
 
 ## Phase 3 · LLM analyst features
 
-**Target window: 2026-10 → 2026-11**  ·  **Status: 🟡 In flight** (4 of 5 items shipped — embedding similarity backend (pre-Phase-3) + actor activity summarisation + NL→Cypher all shipped 2026-06-08; report ingestion scaffold shipped 2026-06-09 covering text-paste path with deterministic IOC extraction + LLM entity enrichment. PDF + URL fetch paths are documented follow-ons. Only hypothesis tracking remains ⚪.)
+**Target window: 2026-10 → 2026-11**  ·  **Status: 🟢 Closed** (5 of 5 items shipped — embedding similarity backend (pre-Phase-3) + actor activity summarisation + NL→Cypher all shipped 2026-06-08; report ingestion shipped 2026-06-09 with text/PDF/URL inputs + persist + review/commit lifecycle; hypothesis tracking shipped 2026-06-09 with LLM-graded confidence + deterministic-fallback grader so the surface works without a provider key.)
 
 Provider abstraction (Gemini / OpenRouter / Ollama) already exists. This
 phase wires it into the analyst workflow, deliberately scoped to specific
@@ -269,8 +269,32 @@ surfaces rather than a generic chat widget.
   the driver itself rejects writes. Defensive prose-stripping handles
   LLMs that ignore the "no fence, no prose" instruction. 26 unit tests
   cover the safety guard and extractor.)
-- ⚪ **Hypothesis tracking** — *"I think Group A is using infrastructure
+- 🟢 **Hypothesis tracking** — *"I think Group A is using infrastructure
   X"* → LLM grades evidence as it accumulates from feeds
+  (shipped 2026-06-09: two new tables in migration 0050 —
+  `hypotheses` (id, title, claim, status `active`|`confirmed`|`refuted`,
+  confidence_score 0..100, optional subject anchor, last-grading meta
+  for audit) + `hypothesis_evidence` (FK to hypothesis, evidence_type
+  ioc/relationship/sighting/actor/malware/campaign/report/freeform,
+  optional entity_id, kind `supports`|`refutes`, weight 0..100,
+  free-text note). Routes: `POST /v1/hypotheses` create,
+  `GET /v1/hypotheses` list (filter by status/subjectType/subjectId),
+  `GET /v1/hypotheses/:id` detail with evidence + support/refute
+  stats, `PATCH /v1/hypotheses/:id` for lifecycle transitions,
+  `POST /v1/hypotheses/:id/evidence` append (rejects on non-active
+  status with NOT_ACTIVE), `POST /v1/hypotheses/:id/grade` runs the
+  LLM grader. Grader prompt is deliberately narrow — supporting vs
+  refuting buckets, sorted by weight, capped at 25 per side; strict
+  guidance bands map confidence ranges to evidence shape; LLM is
+  forbidden from inventing items not in the evidence list. Honest
+  graceful degradation: when no LLM provider is reachable (or the
+  caller passes `skipLlm: true`), the grader returns a deterministic
+  weighted-average score with a transparent "(no LLM)" prefix in the
+  reasoning — the surface keeps working in offline dev. LLM response
+  parser tolerates stray prose and clamps confidence to the 0..100
+  range. 30 unit tests cover schema validation rules (subject pair,
+  freeform-needs-note), prompt builder ordering + caps, response
+  parser edge cases, and the deterministic fallback math.)
 
 > **Honest trade-off**: highest marketing value per hour invested IF
 > prompts stay tight and evaluated. Will become a tar pit if we let it
