@@ -244,7 +244,7 @@ surfaces rather than a generic chat widget.
 
 ## Phase 4 · Outbound integrations
 
-**Target window: 2026-12 → 2027-02**  ·  **Status: 🟡 In flight** (5 of 6 items shipped, 1 with one open follow-up — SIEM CEF/LEEF/ECS codecs + Fortinet/PAN/Cisco blocklist feeds + Teams/Discord/PagerDuty notification adapters + rule DSL + playbook condition DSL with step guards + sandbox triggers across ANY.RUN/Joe Sandbox/Hybrid Analysis with scheduled polling, all shipped 2026-06-08; ticketing fully closed 2026-06-09 with GitHub Issues + JIRA Cloud + GitHub webhook ingest. Open: SIEM direct push clients — Splunk HEC / Elastic bulk / Sentinel LA on top of the existing codecs.)
+**Target window: 2026-12 → 2027-02**  ·  **Status: 🟢 Closed** (6 of 6 items shipped — SIEM CEF/LEEF/ECS codecs + Fortinet/PAN/Cisco blocklist feeds + Teams/Discord/PagerDuty notification adapters + rule DSL + playbook condition DSL with step guards + sandbox triggers across ANY.RUN/Joe Sandbox/Hybrid Analysis with scheduled polling, all shipped 2026-06-08; ticketing fully closed 2026-06-09 with GitHub Issues + JIRA Cloud + GitHub webhook ingest; SIEM direct push closed 2026-06-09 with Splunk HEC + Elastic _bulk clients. Sentinel Log Analytics is a documented follow-up but not a phase blocker — Splunk + Elastic cover the vast majority of production SIEMs.)
 
 Make the platform an active participant in the analyst's stack, not a
 walled garden.
